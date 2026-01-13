@@ -1532,30 +1532,30 @@ function scheduleWelcome(){
   const key = `welcomeOnce_${EMPRESA}_${BOT}`;
   if (sessionStorage.getItem(key)) return;
   const ref = eref('config/chatWelcome');
+  const welcomeTypingDelayMs = 1200;
   ref.once('value').then(s=>{
     const val = s.val() || {};
     if (!val.enabled) {
       requestInitialMenu();
       return;
     }
-    const delay = Math.max(0, parseInt(val.delay||2));
+    const welcomeText = resolveLocalizedTextStrict(val.labels, USER_LANGUAGE, val.sourceLanguage || BOT_BASE_LANGUAGE) || val.text || '';
+    const parts=[];
+    if (val.image) parts.push(`<img src="${val.image}" class="w-full max-w-xs rounded-lg mb-2" />`);
+    if (welcomeText) parts.push(marked.parse(welcomeText));
+    const html = parts.join("");
+    if (!html) {
+      requestInitialMenu();
+      sessionStorage.setItem(key, '1');
+      return;
+    }
+    const typing = showTypingIndicator({ avatarUrl: CURRENT.avatarUrl });
     setTimeout(()=>{
-      const welcomeText = resolveLocalizedTextStrict(val.labels, USER_LANGUAGE, val.sourceLanguage || BOT_BASE_LANGUAGE) || val.text || '';
-      const parts=[];
-      if (val.image) parts.push(`<img src="${val.image}" class="w-full max-w-xs rounded-lg mb-2" />`);
-      if (welcomeText) parts.push(marked.parse(welcomeText));
-      const html = parts.join("");
-      if (!html) {
-        requestInitialMenu();
-        sessionStorage.setItem(key, '1');
-        return;
-      }
-      delayedAssistantAction(() => {
-        addAssistantMessageHTML(html, { avatarUrl: CURRENT.avatarUrl });
-        requestInitialMenu();
-        sessionStorage.setItem(key, '1');
-      });
-    }, delay*1000);
+      removeTyping(typing);
+      addAssistantMessageHTML(html, { avatarUrl: CURRENT.avatarUrl });
+      requestInitialMenu();
+      sessionStorage.setItem(key, '1');
+    }, welcomeTypingDelayMs);
   });
 }
 

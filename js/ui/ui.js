@@ -9019,7 +9019,6 @@ function initWelcome() {
 const ref = eref("config/chatWelcome");
 const enabled = $("welcomeEnabled");
 const text = $("welcomeText");
-const delay = $("welcomeDelay");
 const file = $("welcomeImageFile");
 const preview = $("welcomePreview");
 const removeImageBtn = $("removeWelcomeImage");
@@ -9032,7 +9031,6 @@ const defaultSummaryKey = 'Agregar un mensaje de bienvenida para saludar a tus v
 const state = {
 enabled: false,
 text: "",
-delay: 2,
 image: "",
 labels: {},
 sourceLanguage: getCurrentBotBaseLanguage()
@@ -9086,7 +9084,6 @@ enabled: !!enabled.checked,
 text: labels[sourceLanguage] || "",
 labels,
 sourceLanguage,
-delay: parseInt(delay.value) || 0,
 image: imageUrl
 };
 await ref.set(payload);
@@ -9094,7 +9091,6 @@ state.enabled = payload.enabled;
 state.text = payload.text;
 state.labels = payload.labels || {};
 state.sourceLanguage = payload.sourceLanguage || sourceLanguage;
-state.delay = payload.delay;
 state.image = payload.image;
 if (uploadFile && file) file.value = "";
 renderPreview();
@@ -9204,11 +9200,8 @@ const labels = val.labels && typeof val.labels === 'object' ? val.labels : {};
 const panelLanguage = getCurrentContentLanguage();
 enabled.checked = !!val.enabled;
 text.value = resolveLocalizedLabel(labels, panelLanguage, sourceLanguage) || val.text || "";
-delay.value = val.delay || 2;
 state.enabled = !!val.enabled;
 state.text = text.value;
-const parsedDelay = parseInt(delay.value);
-state.delay = Number.isFinite(parsedDelay) ? parsedDelay : 0;
 state.image = val.image || "";
 state.labels = labels;
 state.sourceLanguage = sourceLanguage;
@@ -9244,11 +9237,6 @@ state.text = text.value;
 state.labels = buildLabelsForLanguage(state.text, getCurrentContentLanguage(), state.labels);
 updateSummary();
 triggerAutoSave();
-});
-delay.addEventListener('input', () => {
-state.delay = parseInt(delay.value) || 0;
-updateSummary();
-triggerAutoSave({ immediate: true });
 });
 removeImageBtn?.addEventListener('click', (event) => {
 event.preventDefault();
