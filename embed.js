@@ -31,10 +31,7 @@
     if (typeof direct === "string" && direct.trim()) return direct.trim();
     const fallbackValue = labels[fallbackKey];
     if (typeof fallbackValue === "string" && fallbackValue.trim()) return fallbackValue.trim();
-    const anyValue = Object.values(labels).find(
-      (value) => typeof value === "string" && value.trim()
-    );
-    return anyValue ? anyValue.trim() : "";
+    return "";
   };
 
   const getBrowserLanguage = () => {
@@ -59,13 +56,13 @@
     return [];
   };
 
-  async function fetchWelcomeConfig(empresa, botId) {
+  async function fetchChatBubbleConfig(empresa, botId) {
     const safeEmpresa = encodeURIComponent(empresa || "");
     const safeBot = encodeURIComponent(botId || "default");
     const candidatePaths = [
-      `empresas/${safeEmpresa}/config/bots/${safeBot}/config/chatWelcome`,
-      `empresas/${safeEmpresa}/bots/${safeBot}/config/chatWelcome`,
-      `${safeEmpresa}/bots/${safeBot}/config/chatWelcome`
+      `empresas/${safeEmpresa}/config/bots/${safeBot}/config/chatBubble`,
+      `empresas/${safeEmpresa}/bots/${safeBot}/config/chatBubble`,
+      `${safeEmpresa}/bots/${safeBot}/config/chatBubble`
     ];
 
     for (const path of candidatePaths) {
@@ -76,7 +73,7 @@
         const data = await res.json();
         if (data && typeof data === "object") return data;
       } catch (err) {
-        console.warn("No se pudo cargar el mensaje de bienvenida", err);
+        console.warn("No se pudo cargar el chat bubble", err);
       }
     }
 
@@ -466,8 +463,14 @@
     shadow.append(btn, bubble, frame);
 
     // 🔄 Comunicación con el iframe
-    let ready = false, got = false, currentPosition = 'right', welcomeBubbleDismissed = false;
-    let welcomeText = "";
+    let ready = false, got = false, currentPosition = 'right';
+    let bubbleDismissed = false;
+    let bubbleText = "";
+    let bubbleConfig = null;
+    let bubbleBaseLanguage = "";
+    let bubbleShowOnce = true;
+    let bubbleLanguage = getBrowserLanguage();
+    const bubbleDismissedKey = `chatBubbleDismissed_${empresa}_${botId}`;
     let pendingVisibility = null;
     let positionResolved = false;
     let positionResolveTimeout = null;
@@ -477,7 +480,12 @@
 
     const hideBubble = (permanent = false) => {
       bubble.style.display = "none";
-      if (permanent) welcomeBubbleDismissed = true;
+      if (permanent && bubbleShowOnce) {
+        bubbleDismissed = true;
+        try {
+          sessionStorage.setItem(bubbleDismissedKey, "1");
+        } catch {}
+      }
     };
 
     const deriveIconColor = (element) => {
@@ -584,8 +592,40 @@
       }
     };
 
+    const getBubbleBaseText = () => {
+      if (!bubbleConfig) return "";
+      const sourceLanguage = normalizeLanguage(bubbleConfig?.sourceLanguage || bubbleBaseLanguage);
+      const labels = bubbleConfig?.labels && typeof bubbleConfig.labels === "object" ? bubbleConfig.labels : {};
+      const baseLabel = sourceLanguage ? labels[sourceLanguage] : "";
+      const baseText = (typeof baseLabel === "string" ? baseLabel.trim() : "") || (bubbleConfig.text || "").toString().trim();
+      return baseText;
+    };
+
+    const updateBubbleTextForLanguage = (language) => {
+      if (!bubbleConfig?.enabled) {
+        bubbleText = "";
+        hideBubble();
+        return;
+      }
+      const normalizedLanguage = normalizeLanguage(language) || bubbleLanguage;
+      const baseText = getBubbleBaseText();
+      if (!baseText) {
+        bubbleText = "";
+        hideBubble();
+        return;
+      }
+      const sourceLanguage = normalizeLanguage(bubbleConfig?.sourceLanguage || bubbleBaseLanguage) || bubbleBaseLanguage;
+      const resolved = resolveLocalizedText(bubbleConfig?.labels, normalizedLanguage, sourceLanguage);
+      bubbleText = (resolved || baseText || "").toString().trim();
+      if (!bubbleText) {
+        hideBubble();
+        return;
+      }
+      maybeShowBubble();
+    };
+
     const maybeShowBubble = () => {
-      if (!welcomeText || welcomeBubbleDismissed) return;
+      if (!bubbleText || bubbleDismissed) return;
       if (btn.style.display === "none") return;
       if (!positionResolved) {
         pendingBubble = true;
@@ -593,7 +633,7 @@
       }
 
       pendingBubble = false;
-      bubbleMessage.textContent = welcomeText;
+      bubbleMessage.textContent = bubbleText;
       bubble.style.display = "flex";
       bubble.dataset.position = currentPosition;
     };
@@ -701,25 +741,24 @@
 
     restoreIconFromSession();
 
-    const [font, welcomeConfig, baseLanguage] = await Promise.all([
+    const [font, chatBubbleConfig, baseLanguage] = await Promise.all([
       fetchFontFamily(empresa, botId),
-      fetchWelcomeConfig(empresa, botId),
+      fetchChatBubbleConfig(empresa, botId),
       fetchBaseLanguage(empresa, botId)
     ]);
     applyFontFamily(font);
-
-    if (welcomeConfig?.enabled) {
+    bubbleConfig = chatBubbleConfig;
+    bubbleBaseLanguage = normalizeLanguage(baseLanguage) || "";
+    bubbleShowOnce = chatBubbleConfig?.showOnce !== false;
+    if (bubbleShowOnce) {
+      try {
+        bubbleDismissed = sessionStorage.getItem(bubbleDismissedKey) === "1";
+      } catch {}
+    }
+    if (bubbleConfig?.enabled) {
       const browserLanguage = getBrowserLanguage();
-      const sourceLanguage = normalizeLanguage(welcomeConfig?.sourceLanguage || baseLanguage);
-      const resolved = resolveLocalizedText(
-        welcomeConfig?.labels,
-        browserLanguage,
-        sourceLanguage || baseLanguage
-      );
-      welcomeText = resolved || (welcomeConfig.text || "").toString().trim();
-      if (welcomeText) {
-        maybeShowBubble();
-      }
+      bubbleLanguage = browserLanguage || bubbleLanguage;
+      updateBubbleTextForLanguage(bubbleLanguage);
     }
 
     bubbleClose.addEventListener("click", (e) => {
@@ -775,6 +814,13 @@
             autoOpenTriggered = false;
           }
           tryAutoOpenChat();
+          break;
+
+        case "chatLanguageChanged":
+          if (d.language) {
+            bubbleLanguage = normalizeLanguage(d.language) || bubbleLanguage;
+            updateBubbleTextForLanguage(bubbleLanguage);
+          }
           break;
 
         case "updateChatButtonColor":

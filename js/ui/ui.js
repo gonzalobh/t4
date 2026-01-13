@@ -132,6 +132,16 @@ labels[lang] = value && value.trim() ? value.trim() : trimmed;
 });
 return labels;
 };
+const buildLabelsForLanguage = (text, language, existingLabels = {}) => {
+const trimmed = (text || '').toString().trim();
+const normalizedLanguage = normalizeBotLanguage(language || getCurrentBotBaseLanguage());
+const labels = {};
+BOT_CONTENT_LANGUAGES.forEach(lang => {
+labels[lang] = (existingLabels?.[lang] || '').toString();
+});
+labels[normalizedLanguage] = trimmed;
+return labels;
+};
 if (window.translationManager) {
 const loginEmailLabelEl = document.getElementById('emailLabel');
 const loginEmailInputEl = document.getElementById('emailInput');
@@ -264,6 +274,36 @@ if (headerSummaryDescription) {
 headerSummaryDescription.textContent = t('Edita el título y la identidad visual del encabezado.');
 registerTranslationTarget(headerSummaryDescription, 'Edita el título y la identidad visual del encabezado.');
 }
+const chatBubbleSectionTitle = document.getElementById('chatBubbleSectionTitle');
+if (chatBubbleSectionTitle) {
+chatBubbleSectionTitle.textContent = t('Chat Bubble');
+registerTranslationTarget(chatBubbleSectionTitle, 'Chat Bubble');
+}
+const chatBubbleSummaryBadge = document.getElementById('chatBubbleSummaryBadge');
+if (chatBubbleSummaryBadge) {
+chatBubbleSummaryBadge.textContent = t('Desactivado');
+registerTranslationTarget(chatBubbleSummaryBadge, 'Desactivado');
+}
+const chatBubbleSummaryText = document.getElementById('chatBubbleSummaryText');
+if (chatBubbleSummaryText) {
+chatBubbleSummaryText.textContent = t('Agrega un texto breve para invitar a abrir el chat.');
+registerTranslationTarget(chatBubbleSummaryText, 'Agrega un texto breve para invitar a abrir el chat.');
+}
+const chatBubbleHelpText = document.getElementById('chatBubbleHelpText');
+if (chatBubbleHelpText) {
+chatBubbleHelpText.textContent = t('Se muestra sobre el botón del chat para invitar al usuario a abrirlo.');
+registerTranslationTarget(chatBubbleHelpText, 'Se muestra sobre el botón del chat para invitar al usuario a abrirlo.');
+}
+const chatBubblePanelHelpText = document.getElementById('chatBubblePanelHelpText');
+if (chatBubblePanelHelpText) {
+chatBubblePanelHelpText.textContent = t('Se muestra sobre el botón del chat para invitar al usuario a abrirlo.');
+registerTranslationTarget(chatBubblePanelHelpText, 'Se muestra sobre el botón del chat para invitar al usuario a abrirlo.');
+}
+const chatBubbleOnceNotice = document.getElementById('chatBubbleOnceNotice');
+if (chatBubbleOnceNotice) {
+chatBubbleOnceNotice.textContent = t('Mostrar solo una vez por visita.');
+registerTranslationTarget(chatBubbleOnceNotice, 'Mostrar solo una vez por visita.');
+}
 const welcomeSectionTitle = document.getElementById('welcomeSectionTitle');
 if (welcomeSectionTitle) {
 welcomeSectionTitle.textContent = t('Mensaje de bienvenida');
@@ -334,6 +374,9 @@ const lang = translationManager.getCurrentLanguage();
 if (lang) return lang;
 }
 return 'es';
+}
+function getCurrentContentLanguage() {
+return normalizeBotLanguage(getCurrentPanelLanguage() || getCurrentBotBaseLanguage());
 }
 function getLeadNoteText(note, preferredLanguage = getCurrentPanelLanguage()) {
 if (!note) return '';
@@ -4326,6 +4369,12 @@ window.__setDefaultChatPanel();
 if (typeof window.__hideHeaderPanel === 'function') {
 window.__hideHeaderPanel();
 }
+if (typeof window.__hideChatBubblePanel === 'function') {
+window.__hideChatBubblePanel();
+}
+if (typeof window.__hideWelcomePanel === 'function') {
+window.__hideWelcomePanel();
+}
 if (targetTab === 'prompt') {
 initPromptTab();
 loadPromptForCurrentBot({ force: true });
@@ -4669,6 +4718,7 @@ initIntegration();
 initRespuestas();
 initFirstMenu();
 initPromptTab();
+initChatBubble();
 initWelcome();
 initSchedule();
 }
@@ -4679,10 +4729,14 @@ const panels = Array.from(document.querySelectorAll('[data-chat-panel]'));
 if (!tabs.length || !panels.length) return;
 const headerOverlay = $('headerSettingsOverlay');
 const headerPanel = $('headerSettingsPanel');
+const chatBubbleOverlay = $('chatBubbleSettingsOverlay');
+const chatBubblePanel = $('chatBubbleSettingsPanel');
 const welcomeOverlay = $('welcomeSettingsOverlay');
 const welcomePanel = $('welcomeSettingsPanel');
 const openHeaderButton = $('openHeaderPanel');
 const closeHeaderButton = $('closeHeaderPanel');
+const openChatBubbleButton = $('openChatBubblePanel');
+const closeChatBubbleButton = $('closeChatBubblePanel');
 const openWelcomeButton = $('openWelcomePanel');
 const closeWelcomeButton = $('closeWelcomePanel');
 const hideHeaderPanel = () => {
@@ -4696,6 +4750,17 @@ headerOverlay.style.display = '';
 }
 };
 window.__hideHeaderPanel = hideHeaderPanel;
+const hideChatBubblePanel = () => {
+if (chatBubblePanel) {
+chatBubblePanel.classList.add('hidden');
+chatBubblePanel.style.display = '';
+}
+if (chatBubbleOverlay) {
+chatBubbleOverlay.classList.add('hidden');
+chatBubbleOverlay.style.display = '';
+}
+};
+window.__hideChatBubblePanel = hideChatBubblePanel;
 const hideWelcomePanel = () => {
 if (welcomePanel) {
 welcomePanel.classList.add('hidden');
@@ -4717,6 +4782,7 @@ panel.classList.toggle('hidden', panel.dataset.chatPanel !== name);
 });
 if (name !== 'chat') {
 hideHeaderPanel();
+hideChatBubblePanel();
 hideWelcomePanel();
 if (typeof window.__hideAvatarPopover === 'function') window.__hideAvatarPopover();
 }
@@ -4747,6 +4813,7 @@ const mid = activityScoreButtons[Math.floor((activityScoreButtons.length - 1) / 
 setActivityScore(mid.dataset.activityScore);
 }
 const showHeaderPanel = () => {
+hideChatBubblePanel();
 hideWelcomePanel();
 if (typeof window.__hideAvatarPopover === 'function') window.__hideAvatarPopover();
 if (headerPanel) {
@@ -4759,8 +4826,23 @@ headerOverlay.style.display = 'block';
 }
 lucide.createIcons();
 };
+const showChatBubblePanel = () => {
+hideHeaderPanel();
+hideWelcomePanel();
+if (typeof window.__hideAvatarPopover === 'function') window.__hideAvatarPopover();
+if (chatBubblePanel) {
+chatBubblePanel.classList.remove('hidden');
+chatBubblePanel.style.display = 'flex';
+}
+if (chatBubbleOverlay) {
+chatBubbleOverlay.classList.remove('hidden');
+chatBubbleOverlay.style.display = 'block';
+}
+lucide.createIcons();
+};
 const showWelcomePanel = () => {
 hideHeaderPanel();
+hideChatBubblePanel();
 if (typeof window.__hideAvatarPopover === 'function') window.__hideAvatarPopover();
 if (welcomePanel) {
 welcomePanel.classList.remove('hidden');
@@ -4775,12 +4857,16 @@ lucide.createIcons();
 openHeaderButton?.addEventListener('click', showHeaderPanel);
 closeHeaderButton?.addEventListener('click', hideHeaderPanel);
 headerOverlay?.addEventListener('click', hideHeaderPanel);
+openChatBubbleButton?.addEventListener('click', showChatBubblePanel);
+closeChatBubbleButton?.addEventListener('click', hideChatBubblePanel);
+chatBubbleOverlay?.addEventListener('click', hideChatBubblePanel);
 openWelcomeButton?.addEventListener('click', showWelcomePanel);
 closeWelcomeButton?.addEventListener('click', hideWelcomePanel);
 welcomeOverlay?.addEventListener('click', hideWelcomePanel);
 window.addEventListener('keyup', (e) => {
 if (e.key === 'Escape') {
 hideHeaderPanel();
+hideChatBubblePanel();
 hideWelcomePanel();
 if (typeof window.__hideAvatarPopover === 'function') window.__hideAvatarPopover();
 }
@@ -5690,6 +5776,7 @@ avatarPopoverOpen = false;
 const showAvatarPopover = () => {
 if (!botAvatarButton || !avatarPopover) return;
 if (typeof window.__hideHeaderPanel === 'function') window.__hideHeaderPanel();
+if (typeof window.__hideChatBubblePanel === 'function') window.__hideChatBubblePanel();
 if (typeof window.__hideWelcomePanel === 'function') window.__hideWelcomePanel();
 avatarPopover.classList.remove('hidden');
 avatarPopover.style.display = 'flex';
@@ -8789,6 +8876,144 @@ toast(t("⚠ Could not save"));
 });
 });
 }
+// === Function: Chat Bubble ===
+function initChatBubble() {
+const ref = eref("config/chatBubble");
+const enabled = $("chatBubbleEnabled");
+const text = $("chatBubbleText");
+const summaryCard = $("chatBubbleSummaryCard");
+const summaryBadge = $("chatBubbleSummaryBadge");
+const summaryText = $("chatBubbleSummaryText");
+const summaryIcon = $("chatBubbleSummaryIcon");
+const defaultSummaryKey = 'Agrega un texto breve para invitar a abrir el chat.';
+const state = {
+enabled: false,
+text: "",
+labels: {},
+sourceLanguage: getCurrentBotBaseLanguage(),
+showOnce: true
+};
+let bubbleDataLoaded = false;
+let autoSaveTimeoutId = null;
+let scheduledSave = false;
+let isSavingBubble = false;
+let queuedSave = false;
+const runBubbleSave = async () => {
+const panelLanguage = getCurrentContentLanguage();
+const sourceLanguage = getCurrentBotBaseLanguage();
+const sourceText = (text.value || "").trim();
+const labels = buildLabelsForLanguage(sourceText, panelLanguage, state.labels || {});
+try {
+await canWrite(async () => {
+const payload = {
+enabled: !!enabled.checked,
+text: labels[sourceLanguage] || "",
+labels,
+sourceLanguage,
+showOnce: true
+};
+await ref.set(payload);
+state.enabled = payload.enabled;
+state.text = sourceText;
+state.labels = payload.labels || {};
+state.sourceLanguage = payload.sourceLanguage || sourceLanguage;
+state.showOnce = payload.showOnce !== false;
+updateSummary();
+});
+toast(t('✔ Chat bubble saved'));
+} catch (error) {
+console.error('Failed to save chat bubble settings', error);
+toast(t('⚠ Could not save chat bubble'));
+}
+};
+const requestBubbleSave = () => {
+if (!bubbleDataLoaded) {
+scheduledSave = true;
+return;
+}
+if (isSavingBubble) {
+queuedSave = true;
+return;
+}
+isSavingBubble = true;
+runBubbleSave().finally(() => {
+isSavingBubble = false;
+if (queuedSave) {
+queuedSave = false;
+requestBubbleSave();
+}
+});
+};
+const triggerAutoSave = (immediate = false) => {
+if (!bubbleDataLoaded) {
+scheduledSave = true;
+return;
+}
+if (autoSaveTimeoutId) clearTimeout(autoSaveTimeoutId);
+const delayMs = immediate ? 0 : 700;
+autoSaveTimeoutId = setTimeout(() => {
+requestBubbleSave();
+}, delayMs);
+};
+const updateSummary = () => {
+const isEnabled = !!state.enabled;
+if (summaryBadge) {
+const badgeKey = isEnabled ? 'Activado' : 'Desactivado';
+summaryBadge.textContent = t(badgeKey);
+registerTranslationTarget(summaryBadge, badgeKey);
+summaryBadge.classList.toggle('bg-emerald-100', isEnabled);
+summaryBadge.classList.toggle('text-emerald-700', isEnabled);
+summaryBadge.classList.toggle('bg-gray-200', !isEnabled);
+summaryBadge.classList.toggle('text-gray-600', !isEnabled);
+}
+if (summaryText) {
+const message = resolveLocalizedLabel(state.labels, getCurrentContentLanguage(), state.sourceLanguage);
+const fallback = t(defaultSummaryKey);
+summaryText.textContent = message || fallback;
+registerTranslationTarget(summaryText, defaultSummaryKey, 'text', {
+formatter: translated => (message ? message : translated)
+});
+summaryText.classList.toggle('text-gray-400', !message);
+}
+if (summaryIcon) {
+summaryIcon.classList.toggle('text-gray-400', !isEnabled);
+}
+if (summaryCard) {
+summaryCard.classList.toggle('opacity-60', !isEnabled);
+}
+};
+if (!ref) return console.warn("❌ No se encontró la referencia de chatBubble");
+ref.once("value", snap => {
+const val = snap.val() || {};
+const sourceLanguage = normalizeBotLanguage(val.sourceLanguage || getCurrentBotBaseLanguage());
+const labels = val.labels && typeof val.labels === 'object' ? val.labels : {};
+const panelLanguage = getCurrentContentLanguage();
+enabled.checked = !!val.enabled;
+text.value = resolveLocalizedLabel(labels, panelLanguage, sourceLanguage) || val.text || "";
+state.enabled = !!val.enabled;
+state.text = text.value;
+state.labels = labels;
+state.sourceLanguage = sourceLanguage;
+state.showOnce = val.showOnce !== false;
+updateSummary();
+bubbleDataLoaded = true;
+if (scheduledSave) {
+scheduledSave = false;
+requestBubbleSave();
+}
+});
+enabled.addEventListener('change', () => {
+state.enabled = !!enabled.checked;
+updateSummary();
+triggerAutoSave(true);
+});
+text.addEventListener('input', () => {
+state.text = text.value;
+state.labels = buildLabelsForLanguage(state.text, getCurrentContentLanguage(), state.labels);
+updateSummary();
+triggerAutoSave();
+});
+}
 // === Function: Welcome Message ===
 function initWelcome() {
 const ref = eref("config/chatWelcome");
@@ -8833,8 +9058,9 @@ removeImage: shouldRemove
 const runWelcomeSave = async ({ uploadFile = null, removeImage = false } = {}) => {
 let imageUrl = state.image || "";
 const sourceLanguage = getCurrentBotBaseLanguage();
+const panelLanguage = getCurrentContentLanguage();
 const sourceText = (text.value || "").trim();
-const labels = await buildLabelsForLanguages(sourceText, sourceLanguage, state.labels || {});
+const labels = buildLabelsForLanguage(sourceText, panelLanguage, state.labels || {});
 try {
 await canWrite(async () => {
 if (removeImage) {
@@ -8857,7 +9083,7 @@ imageUrl = "";
 }
 const payload = {
 enabled: !!enabled.checked,
-text: labels[sourceLanguage] || sourceText,
+text: labels[sourceLanguage] || "",
 labels,
 sourceLanguage,
 delay: parseInt(delay.value) || 0,
@@ -8927,7 +9153,7 @@ summaryBadge.classList.toggle('bg-gray-200', !isEnabled);
 summaryBadge.classList.toggle('text-gray-600', !isEnabled);
 }
 if (summaryText) {
-const message = (state.text || "").trim();
+const message = resolveLocalizedLabel(state.labels, getCurrentContentLanguage(), state.sourceLanguage);
 const fallback = t(defaultSummaryKey);
 summaryText.textContent = message || fallback;
 registerTranslationTarget(summaryText, defaultSummaryKey, 'text', {
@@ -8975,8 +9201,9 @@ ref.once("value", snap => {
 const val = snap.val() || {};
 const sourceLanguage = normalizeBotLanguage(val.sourceLanguage || getCurrentBotBaseLanguage());
 const labels = val.labels && typeof val.labels === 'object' ? val.labels : {};
+const panelLanguage = getCurrentContentLanguage();
 enabled.checked = !!val.enabled;
-text.value = resolveLocalizedLabel(labels, sourceLanguage, sourceLanguage) || val.text || "";
+text.value = resolveLocalizedLabel(labels, panelLanguage, sourceLanguage) || val.text || "";
 delay.value = val.delay || 2;
 state.enabled = !!val.enabled;
 state.text = text.value;
@@ -9014,6 +9241,7 @@ triggerAutoSave({ immediate: true });
 });
 text.addEventListener('input', () => {
 state.text = text.value;
+state.labels = buildLabelsForLanguage(state.text, getCurrentContentLanguage(), state.labels);
 updateSummary();
 triggerAutoSave();
 });
