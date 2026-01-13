@@ -145,6 +145,23 @@
       opacity: 0.9;
     }
 
+    #chatLanguageSelect {
+      border: 1px solid #e5e7eb;
+      border-radius: 9999px;
+      padding: 4px 10px;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #4b5563;
+      background: #fff;
+      cursor: pointer;
+    }
+    #chatLanguageSelect:focus {
+      outline: none;
+      box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.12);
+    }
+
     .dot {
   width: 6px;
   height: 6px;
@@ -208,6 +225,13 @@
         <span id="chatHotelName" class="font-semibold text-[17px] text-gray-800">Tomos Bot</span>
       </div>
       <div class="flex items-center gap-4">
+        <select id="chatLanguageSelect" aria-label="Chat language">
+          <option value="en">EN</option>
+          <option value="es">ES</option>
+          <option value="fr">FR</option>
+          <option value="de">DE</option>
+          <option value="pt">PT</option>
+        </select>
         <div class="relative">
           <button id="chatMenuBtn" type="button" class="text-gray-500 select-none cursor-pointer flex items-center justify-center w-8 h-8 rounded-full hover:bg-gray-100" title="Menú" aria-haspopup="true" aria-expanded="false">•••</button>
           <div id="chatMenu" class="hidden absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-lg border border-gray-100 py-1 text-sm z-20">
@@ -247,58 +271,126 @@
 
   <script>
     let USER_LANGUAGE = 'en';
-    document.addEventListener('DOMContentLoaded', () => {
-      if (window.translationManager) {
-        translationManager.init();
+    let BOT_BASE_LANGUAGE = 'es';
+    const CHAT_SUPPORTED_LANGUAGES = ['es', 'en', 'fr', 'de', 'pt'];
+    const CHAT_TEXT_TRANSLATIONS = {
+      es: {
+        inputPlaceholder: 'Escribe tu mensaje…',
+        downloadConversation: 'Descargar conversación'
+      },
+      en: {
+        inputPlaceholder: 'Write your message…',
+        downloadConversation: 'Download conversation'
+      },
+      fr: {
+        inputPlaceholder: 'Écrivez votre message…',
+        downloadConversation: 'Télécharger la conversation'
+      },
+      de: {
+        inputPlaceholder: 'Schreibe deine Nachricht…',
+        downloadConversation: 'Unterhaltung herunterladen'
+      },
+      pt: {
+        inputPlaceholder: 'Escreva sua mensagem…',
+        downloadConversation: 'Baixar conversa'
       }
+    };
+    const CHAT_LANGUAGE_NAMES = {
+      es: 'Spanish',
+      en: 'English',
+      fr: 'French',
+      de: 'German',
+      pt: 'Portuguese'
+    };
 
-      const BROWSER_LANGUAGE = (navigator.language || navigator.userLanguage || 'en').slice(0, 2).toLowerCase();
-      const activeLanguage = window.translationManager
-        ? translationManager.getCurrentLanguage()
-        : BROWSER_LANGUAGE;
-      const TEXT_TRANSLATIONS = {
-        es: {
-          inputPlaceholder: 'Escribe tu mensaje…',
-          downloadConversation: 'Descargar conversación'
-        },
-        en: {
-          inputPlaceholder: 'Write your message…',
-          downloadConversation: 'Download conversation'
-        },
-        fr: {
-          inputPlaceholder: 'Écrivez votre message…',
-          downloadConversation: 'Télécharger la conversation'
-        },
-        de: {
-          inputPlaceholder: 'Schreibe deine Nachricht…',
-          downloadConversation: 'Unterhaltung herunterladen'
-        },
-        pt: {
-          inputPlaceholder: 'Escreva sua mensagem…',
-          downloadConversation: 'Baixar conversa'
-        }
-      };
+    const normalizeChatLanguage = (value) => {
+      const normalized = (value || '').toString().trim().toLowerCase();
+      return CHAT_SUPPORTED_LANGUAGES.includes(normalized) ? normalized : '';
+    };
 
-      const selected = TEXT_TRANSLATIONS[activeLanguage] || TEXT_TRANSLATIONS.en;
+    const getBrowserLanguage = () => {
+      const raw = (navigator.language || navigator.userLanguage || 'en').slice(0, 2).toLowerCase();
+      return normalizeChatLanguage(raw);
+    };
 
+    const getLanguageStorageKey = () => `chatLanguage_${EMPRESA || 'default'}_${BOT || 'default'}`;
+
+    const getStoredLanguage = () => {
+      try {
+        return normalizeChatLanguage(sessionStorage.getItem(getLanguageStorageKey()));
+      } catch (err) {
+        return '';
+      }
+    };
+
+    const resolveChatLanguage = () => {
+      const stored = getStoredLanguage();
+      if (stored) return stored;
+      const browserLanguage = getBrowserLanguage();
+      if (browserLanguage) return browserLanguage;
+      return normalizeChatLanguage(BOT_BASE_LANGUAGE) || 'es';
+    };
+
+    const resolveLocalizedText = (labels = {}, preferred, fallback) => {
+      if (!labels || typeof labels !== 'object') return '';
+      const preferredKey = normalizeChatLanguage(preferred);
+      const fallbackKey = normalizeChatLanguage(fallback || preferred);
+      const direct = labels[preferredKey];
+      if (typeof direct === 'string' && direct.trim()) return direct.trim();
+      const fallbackValue = labels[fallbackKey];
+      if (typeof fallbackValue === 'string' && fallbackValue.trim()) return fallbackValue.trim();
+      const anyValue = Object.values(labels).find(value => typeof value === 'string' && value.trim());
+      return anyValue ? anyValue.trim() : '';
+    };
+
+    const updateChatStaticTexts = (language) => {
+      const selected = CHAT_TEXT_TRANSLATIONS[language] || CHAT_TEXT_TRANSLATIONS.en;
       const chatInput = document.getElementById('chatInput');
       if (chatInput) {
         chatInput.placeholder = selected.inputPlaceholder;
       }
-
-      USER_LANGUAGE = activeLanguage;
-
       const downloadChatBtnLabel = document.querySelector('#downloadChatBtn span');
       if (downloadChatBtnLabel) {
         downloadChatBtnLabel.textContent = selected.downloadConversation;
       }
+    };
 
+    const updateLanguageSelector = (language) => {
+      const select = document.getElementById('chatLanguageSelect');
+      if (select && select.value !== language) {
+        select.value = language;
+      }
+    };
+
+    const applyChatLanguage = (language, { persist = false } = {}) => {
+      const normalized = normalizeChatLanguage(language) || 'en';
+      USER_LANGUAGE = normalized;
+      document.documentElement.lang = normalized;
+      updateChatStaticTexts(normalized);
+      updateLanguageSelector(normalized);
+      if (typeof renderInitialMenu === 'function') {
+        renderInitialMenu();
+      }
+      if (window.translationManager && typeof translationManager.applyLanguage === 'function') {
+        translationManager.applyLanguage(normalized);
+      }
+      if (persist) {
+        try {
+          sessionStorage.setItem(getLanguageStorageKey(), normalized);
+        } catch (err) {
+          console.warn('No se pudo guardar el idioma en sessionStorage', err);
+        }
+      }
+    };
+
+    const initChatTranslations = () => {
       if (window.translationManager) {
+        translationManager.init();
         translationManager.register(document.getElementById('pwdTitle'), 'Enter Password');
         translationManager.register(document.getElementById('pwdBtn'), 'Enter');
         translationManager.register(document.getElementById('pwdError'), 'Wrong password');
       }
-    });
+    };
   </script>
 
   <script>
@@ -346,6 +438,17 @@ function getBot() {
   return bot;
 }
 let BOT = getBot();
+
+function initChatLanguageControls() {
+  initChatTranslations();
+  const languageSelect = document.getElementById('chatLanguageSelect');
+  if (languageSelect) {
+    languageSelect.addEventListener('change', (event) => {
+      applyChatLanguage(event.target.value, { persist: true });
+    });
+  }
+  applyChatLanguage(resolveChatLanguage());
+}
 
 const CHAT_SESSION_KEY = `chatId:${EMPRESA}:${BOT}`;
 let CHAT_ID = sessionStorage.getItem(CHAT_SESSION_KEY) || `${Date.now()}`;
@@ -1250,7 +1353,7 @@ Cada campo debe contener una frase corta (máximo 30 palabras) que resuma por qu
    AUTO RESPONSES (desde Admin beta3)
 ========================= */
 let AUTO = {}; // { id: {trigger, type, text, cards, extras} }
-let FIRST_MENU = { enabled: false, buttons: [] };
+let FIRST_MENU = { enabled: false, buttons: [], sourceLanguage: 'es' };
 function toYouTubeEmbed(url = '') {
   const match = (url || '').match(/(?:youtu\.be\/|v=)([\w-]{11})/);
   if (match && match[1]) return `https://www.youtube.com/embed/${match[1]}`;
@@ -1258,20 +1361,38 @@ function toYouTubeEmbed(url = '') {
 }
 function normalizeFirstMenu(payload = {}) {
   const rawButtons = Array.isArray(payload?.buttons) ? payload.buttons : [];
+  const sourceLanguage = normalizeChatLanguage(payload?.sourceLanguage) || BOT_BASE_LANGUAGE;
   const buttons = rawButtons
-    .map(btn => ({
-      label: (btn?.label || "").trim(),
-      message: (btn?.message || "").trim()
-    }))
-    .filter(btn => btn.label && btn.message)
+    .map(btn => {
+      const labels = btn?.labels && typeof btn.labels === 'object' ? btn.labels : {};
+      const label = (btn?.label || resolveLocalizedText(labels, sourceLanguage, sourceLanguage) || '').trim();
+      const intent = (btn?.intent || btn?.message || btn?.action || '').trim();
+      return {
+        label,
+        intent,
+        message: intent,
+        labels
+      };
+    })
+    .filter(btn => (btn.labels && Object.keys(btn.labels).length) || (btn.label && btn.message))
     .slice(0, 5);
   return {
     enabled: !!payload?.enabled,
-    buttons
+    buttons,
+    sourceLanguage
   };
 }
 function getFirstMenuKey() {
   return `firstMenuOnce_${EMPRESA}_${BOT}`;
+}
+function getFirstMenuButtonLabel(button) {
+  if (!button) return '';
+  const label = resolveLocalizedText(button.labels, USER_LANGUAGE, FIRST_MENU.sourceLanguage || BOT_BASE_LANGUAGE);
+  return label || button.label || '';
+}
+function getFirstMenuButtonIntent(button) {
+  if (!button) return '';
+  return button.intent || button.message || '';
 }
 function renderInitialMenu() {
   if (!initialMenuContainer) return false;
@@ -1287,8 +1408,8 @@ function renderInitialMenu() {
 function buildFirstMenuHtml() {
   const buttons = FIRST_MENU.buttons || [];
   const btns = buttons.map(btn => {
-    const label = escapeHtml(btn.label || "");
-    const payload = encodeURIComponent(btn.message || "");
+    const label = escapeHtml(getFirstMenuButtonLabel(btn));
+    const payload = encodeURIComponent(getFirstMenuButtonIntent(btn));
     return `<button class="pill-btn first-menu-option" data-message="${payload}">${label}</button>`;
   }).join("");
   return btns;
@@ -1302,7 +1423,7 @@ function showFirstMenu({ force = false } = {}) {
   const html = `<div class="flex flex-wrap justify-center gap-2">${buildFirstMenuHtml()}</div>`;
   addAssistantMessageHTML(html, {
     avatarUrl: CURRENT.avatarUrl,
-    rawText: FIRST_MENU.buttons.map(btn => btn.label).join(", ")
+    rawText: FIRST_MENU.buttons.map(btn => getFirstMenuButtonLabel(btn)).join(", ")
   });
   if (!force) sessionStorage.setItem(key, '1');
 }
@@ -1445,11 +1566,12 @@ function scheduleWelcome(){
       requestInitialMenu();
       return;
     }
+    const welcomeText = resolveLocalizedText(val.labels, USER_LANGUAGE, val.sourceLanguage || BOT_BASE_LANGUAGE) || val.text || '';
     const delay = Math.max(0, parseInt(val.delay||2));
     setTimeout(()=>{
       const parts=[];
       if (val.image) parts.push(`<img src="${val.image}" class="w-full max-w-xs rounded-lg mb-2" />`);
-      if (val.text) parts.push(marked.parse(val.text));
+      if (welcomeText) parts.push(marked.parse(welcomeText));
       const html = parts.join("");
       delayedAssistantAction(() => {
         addAssistantMessageHTML(html, { avatarUrl: CURRENT.avatarUrl });
@@ -1468,8 +1590,11 @@ const CURRENT = { avatarUrl: "", hotelName: "", contextInfo: "", personality:"wa
 
 
 async function askAI(userText) {
+  const languageName = CHAT_LANGUAGE_NAMES[USER_LANGUAGE] || 'English';
   const combinedSystem = `
   ${SYSTEM_PROMPT || ""}
+
+  Respond to the user in ${languageName}.
 
   Use the following hotel information to answer the guest accurately:
 
@@ -1647,6 +1772,12 @@ function applyPrimaryColor(color){
 function initFirebaseBindings() {
   // Colores
   eref('config/chatPrimaryColor').on('value', s => applyPrimaryColor(s.val() || '#111111'));
+
+  eref('config/baseLanguage').on('value', s => {
+    const baseLang = normalizeChatLanguage(s.val());
+    BOT_BASE_LANGUAGE = baseLang || BOT_BASE_LANGUAGE;
+    applyChatLanguage(resolveChatLanguage());
+  });
 
   // 🆕 Fondo del chat
   eref('config/chatBackgroundColor').on('value', s => {
@@ -2007,6 +2138,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   await prepareBotPath();
   initSystemPromptListener();
   initFirebaseBindings();
+  initChatLanguageControls();
 
   // Cerrar chat
   document.getElementById("closeChat").addEventListener("click", () => {

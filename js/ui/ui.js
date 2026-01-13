@@ -68,6 +68,70 @@ const registerTranslationTarget = (node, key, target = 'text', options = {}) => 
 if (!node || !window.translationManager) return;
 translationManager.register(node, key, target, options);
 };
+const BOT_CONTENT_LANGUAGES = ['es', 'en', 'fr', 'de', 'pt'];
+const DEFAULT_BOT_LANGUAGE = 'es';
+let CURRENT_BOT_BASE_LANGUAGE = DEFAULT_BOT_LANGUAGE;
+const normalizeBotLanguage = (value) => {
+const normalized = (value || '').toString().trim().toLowerCase();
+return BOT_CONTENT_LANGUAGES.includes(normalized) ? normalized : DEFAULT_BOT_LANGUAGE;
+};
+const setCurrentBotBaseLanguage = (value) => {
+CURRENT_BOT_BASE_LANGUAGE = normalizeBotLanguage(value);
+return CURRENT_BOT_BASE_LANGUAGE;
+};
+const getCurrentBotBaseLanguage = () => CURRENT_BOT_BASE_LANGUAGE;
+const resolveLocalizedLabel = (labels = {}, preferred, fallback) => {
+if (!labels || typeof labels !== 'object') return '';
+const normalizedPreferred = normalizeBotLanguage(preferred);
+const normalizedFallback = normalizeBotLanguage(fallback || preferred);
+const direct = labels[normalizedPreferred];
+if (typeof direct === 'string' && direct.trim()) return direct.trim();
+const fallbackValue = labels[normalizedFallback];
+if (typeof fallbackValue === 'string' && fallbackValue.trim()) return fallbackValue.trim();
+const anyValue = Object.values(labels).find(value => typeof value === 'string' && value.trim());
+return anyValue ? anyValue.trim() : '';
+};
+const translateTextWithGoogle = async (text, sourceLanguage, targetLanguage) => {
+const trimmed = (text || '').toString().trim();
+if (!trimmed) return '';
+if (sourceLanguage === targetLanguage) return trimmed;
+const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${encodeURIComponent(sourceLanguage)}&tl=${encodeURIComponent(targetLanguage)}&dt=t&q=${encodeURIComponent(trimmed)}`;
+const response = await fetch(url);
+if (!response.ok) {
+throw new Error(`Translation failed (${response.status})`);
+}
+const data = await response.json();
+if (!Array.isArray(data) || !Array.isArray(data[0])) return '';
+return data[0].map(part => part?.[0] || '').join('').trim();
+};
+const buildLabelsForLanguages = async (text, sourceLanguage, existingLabels = {}) => {
+const trimmed = (text || '').toString().trim();
+const normalizedSource = normalizeBotLanguage(sourceLanguage);
+const labels = {};
+BOT_CONTENT_LANGUAGES.forEach(lang => {
+labels[lang] = '';
+});
+if (!trimmed) {
+return labels;
+}
+const canReuse = existingLabels && existingLabels[normalizedSource] === trimmed;
+labels[normalizedSource] = trimmed;
+const targets = BOT_CONTENT_LANGUAGES.filter(lang => lang !== normalizedSource);
+const translations = await Promise.all(targets.map(async (lang) => {
+if (canReuse && existingLabels?.[lang]) return existingLabels[lang];
+try {
+return await translateTextWithGoogle(trimmed, normalizedSource, lang);
+} catch (error) {
+console.warn('No se pudo traducir', { sourceLanguage: normalizedSource, targetLanguage: lang, error });
+return trimmed;
+}
+}));
+targets.forEach((lang, index) => {
+const value = translations[index];
+labels[lang] = value && value.trim() ? value.trim() : trimmed;
+});
+return labels;
+};
 if (window.translationManager) {
 const loginEmailLabelEl = document.getElementById('emailLabel');
 const loginEmailInputEl = document.getElementById('emailInput');
@@ -5782,6 +5846,23 @@ leadCaptureToggle?.addEventListener('change', () => canWrite(async () => {
 await leadCaptureRef.set(!!leadCaptureToggle.checked);
 toast(translationManager.translate('saved'));
 }));
+// Base language selector
+const baseLanguageRef = eref('config/baseLanguage');
+const baseLanguageLabel = $('botBaseLanguageLabel');
+const baseLanguageSelect = $('botBaseLanguageSelect');
+if (baseLanguageLabel) {
+baseLanguageLabel.textContent = t('Idioma base del bot');
+registerTranslationTarget(baseLanguageLabel, 'Idioma base del bot');
+}
+baseLanguageRef.once('value', (s) => {
+const value = setCurrentBotBaseLanguage(s.val());
+if (baseLanguageSelect) baseLanguageSelect.value = value;
+});
+baseLanguageSelect?.addEventListener('change', () => canWrite(async () => {
+const value = setCurrentBotBaseLanguage(baseLanguageSelect.value);
+await baseLanguageRef.set(value);
+toast(translationManager.translate('saved'));
+}));
 // Chat header visibility toggle
 const chatHeaderVisibleRef = eref('config/chatHeaderVisible');
 const chatHeaderToggle = $('tgChatHeaderVisible');
@@ -8608,7 +8689,8 @@ const ref = eref("config/firstMenu");
 const MAX_BUTTONS = 5;
 const state = {
 enabled: false,
-buttons: []
+buttons: [],
+sourceLanguage: getCurrentBotBaseLanguage()
 };
 const setMessage = (text = "") => {
 if (!messageEl) return;
@@ -8620,12 +8702,19 @@ messageEl.textContent = text;
 messageEl.classList.remove("hidden");
 setTimeout(() => messageEl.classList.add("hidden"), 2200);
 };
-const normalizeButtons = (buttons) => (Array.isArray(buttons) ? buttons : [])
-.map(btn => ({
-label: (btn?.label || "").trim(),
-message: (btn?.message || btn?.action || "").trim()
-}))
-.filter(btn => btn.label || btn.message)
+const normalizeButtons = (buttons, sourceLanguage) => (Array.isArray(buttons) ? buttons : [])
+.map(btn => {
+const labels = btn?.labels && typeof btn.labels === 'object' ? btn.labels : {};
+const intent = (btn?.intent || btn?.message || btn?.action || '').trim();
+const label = (btn?.label || resolveLocalizedLabel(labels, sourceLanguage, sourceLanguage) || '').trim();
+return {
+label,
+message: intent,
+intent,
+labels
+};
+})
+.filter(btn => btn.label || btn.message || (btn.labels && Object.keys(btn.labels).length))
 .slice(0, MAX_BUTTONS);
 const updateAddButtonState = () => {
 const disabled = state.buttons.length >= MAX_BUTTONS;
@@ -8690,15 +8779,28 @@ updateAddButtonState();
 renderPreview();
 };
 const persist = async () => {
+const sourceLanguage = getCurrentBotBaseLanguage();
+const translatedButtons = await Promise.all(state.buttons.map(async (btn) => {
+const labelText = (btn.label || '').trim();
+const intent = (btn.message || btn.intent || '').trim();
+const labels = await buildLabelsForLanguages(labelText, sourceLanguage, btn.labels || {});
+return {
+label: labelText,
+message: intent,
+intent,
+labels
+};
+}));
+const buttons = translatedButtons.filter(btn => btn.label && btn.intent);
 await canWrite(async () => {
 const payload = {
 enabled: !!state.enabled,
-buttons: state.buttons.map(btn => ({
-label: btn.label || "",
-message: btn.message || ""
-}))
+sourceLanguage,
+buttons
 };
 await ref.set(payload);
+state.buttons = buttons;
+state.sourceLanguage = sourceLanguage;
 setMessage(t("✔ Changes saved"));
 toast(t("✔ Changes saved"));
 });
@@ -8739,8 +8841,10 @@ registerTranslationTarget(saveLabel, "Save changes");
 }
 ref.once("value").then(snap => {
 const val = snap.val() || {};
+const sourceLanguage = normalizeBotLanguage(val.sourceLanguage || getCurrentBotBaseLanguage());
 state.enabled = !!val.enabled;
-state.buttons = normalizeButtons(val.buttons);
+state.buttons = normalizeButtons(val.buttons, sourceLanguage);
+state.sourceLanguage = sourceLanguage;
 enabledToggle.checked = state.enabled;
 renderButtons();
 });
@@ -8790,7 +8894,9 @@ const state = {
 enabled: false,
 text: "",
 delay: 2,
-image: ""
+image: "",
+labels: {},
+sourceLanguage: getCurrentBotBaseLanguage()
 };
 let welcomeDataLoaded = false;
 let autoSaveTimeoutId = null;
@@ -8812,6 +8918,9 @@ removeImage: shouldRemove
 };
 const runWelcomeSave = async ({ uploadFile = null, removeImage = false } = {}) => {
 let imageUrl = state.image || "";
+const sourceLanguage = getCurrentBotBaseLanguage();
+const sourceText = (text.value || "").trim();
+const labels = await buildLabelsForLanguages(sourceText, sourceLanguage, state.labels || {});
 try {
 await canWrite(async () => {
 if (removeImage) {
@@ -8834,13 +8943,17 @@ imageUrl = "";
 }
 const payload = {
 enabled: !!enabled.checked,
-text: (text.value || "").trim(),
+text: labels[sourceLanguage] || sourceText,
+labels,
+sourceLanguage,
 delay: parseInt(delay.value) || 0,
 image: imageUrl
 };
 await ref.set(payload);
 state.enabled = payload.enabled;
 state.text = payload.text;
+state.labels = payload.labels || {};
+state.sourceLanguage = payload.sourceLanguage || sourceLanguage;
 state.delay = payload.delay;
 state.image = payload.image;
 if (uploadFile && file) file.value = "";
@@ -8946,14 +9059,18 @@ if (!ref) return console.warn("❌ No se encontró la referencia de chatWelcome"
 // Cargar desde Firebase
 ref.once("value", snap => {
 const val = snap.val() || {};
+const sourceLanguage = normalizeBotLanguage(val.sourceLanguage || getCurrentBotBaseLanguage());
+const labels = val.labels && typeof val.labels === 'object' ? val.labels : {};
 enabled.checked = !!val.enabled;
-text.value = val.text || "";
+text.value = resolveLocalizedLabel(labels, sourceLanguage, sourceLanguage) || val.text || "";
 delay.value = val.delay || 2;
 state.enabled = !!val.enabled;
-state.text = val.text || "";
+state.text = text.value;
 const parsedDelay = parseInt(delay.value);
 state.delay = Number.isFinite(parsedDelay) ? parsedDelay : 0;
 state.image = val.image || "";
+state.labels = labels;
+state.sourceLanguage = sourceLanguage;
 renderPreview();
 updateSummary();
 welcomeDataLoaded = true;
