@@ -336,6 +336,16 @@
       const anyValue = Object.values(labels).find(value => typeof value === 'string' && value.trim());
       return anyValue ? anyValue.trim() : '';
     };
+    const resolveLocalizedTextStrict = (labels = {}, preferred, fallback) => {
+      if (!labels || typeof labels !== 'object') return '';
+      const preferredKey = normalizeChatLanguage(preferred);
+      const fallbackKey = normalizeChatLanguage(fallback || preferred);
+      const direct = labels[preferredKey];
+      if (typeof direct === 'string' && direct.trim()) return direct.trim();
+      const fallbackValue = labels[fallbackKey];
+      if (typeof fallbackValue === 'string' && fallbackValue.trim()) return fallbackValue.trim();
+      return '';
+    };
 
     const updateChatStaticTexts = (language) => {
       const selected = CHAT_TEXT_TRANSLATIONS[language] || CHAT_TEXT_TRANSLATIONS.en;
@@ -368,6 +378,9 @@
       if (window.translationManager && typeof translationManager.applyLanguage === 'function') {
         translationManager.applyLanguage(normalized);
       }
+      try {
+        window.parent.postMessage({ action: 'chatLanguageChanged', language: normalized }, '*');
+      } catch (err) {}
       if (persist) {
         try {
           sessionStorage.setItem(getLanguageStorageKey(), normalized);
@@ -1525,13 +1538,18 @@ function scheduleWelcome(){
       requestInitialMenu();
       return;
     }
-    const welcomeText = resolveLocalizedText(val.labels, USER_LANGUAGE, val.sourceLanguage || BOT_BASE_LANGUAGE) || val.text || '';
     const delay = Math.max(0, parseInt(val.delay||2));
     setTimeout(()=>{
+      const welcomeText = resolveLocalizedTextStrict(val.labels, USER_LANGUAGE, val.sourceLanguage || BOT_BASE_LANGUAGE) || val.text || '';
       const parts=[];
       if (val.image) parts.push(`<img src="${val.image}" class="w-full max-w-xs rounded-lg mb-2" />`);
       if (welcomeText) parts.push(marked.parse(welcomeText));
       const html = parts.join("");
+      if (!html) {
+        requestInitialMenu();
+        sessionStorage.setItem(key, '1');
+        return;
+      }
       delayedAssistantAction(() => {
         addAssistantMessageHTML(html, { avatarUrl: CURRENT.avatarUrl });
         requestInitialMenu();
