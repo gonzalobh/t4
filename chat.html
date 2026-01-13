@@ -210,12 +210,6 @@
   </style>
 </head>
 <body>
-  <div id="pwdScreen" class="fixed inset-0 bg-white flex flex-col items-center justify-center gap-4 text-center z-[999999]">
-    <h2 id="pwdTitle" class="text-lg font-semibold">Enter Password</h2>
-    <input id="pwdInput" type="password" class="border border-gray-300 rounded-lg px-3 py-2 w-64" />
-    <button id="pwdBtn" class="px-4 py-2 bg-black text-white rounded-lg">Enter</button>
-    <p id="pwdError" class="text-red-500 text-sm hidden">Wrong password</p>
-  </div>
   <!-- VISTA DEL CHAT (siempre visible, sin hero ni menús) -->
   <div id="chatWindow">
     <!-- Header -->
@@ -383,14 +377,6 @@
       }
     };
 
-    const initChatTranslations = () => {
-      if (window.translationManager) {
-        translationManager.init();
-        translationManager.register(document.getElementById('pwdTitle'), 'Enter Password');
-        translationManager.register(document.getElementById('pwdBtn'), 'Enter');
-        translationManager.register(document.getElementById('pwdError'), 'Wrong password');
-      }
-    };
   </script>
 
   <script>
@@ -440,7 +426,9 @@ function getBot() {
 let BOT = getBot();
 
 function initChatLanguageControls() {
-  initChatTranslations();
+  if (window.translationManager && typeof translationManager.init === 'function') {
+    translationManager.init();
+  }
   const languageSelect = document.getElementById('chatLanguageSelect');
   if (languageSelect) {
     languageSelect.addEventListener('change', (event) => {
@@ -715,35 +703,6 @@ function getBotBasePath() {
 }
 
 function eref(path){ return db.ref(`${getBotBasePath()}/${path}`); }
-
-let REQUIRED_PWD = "";
-
-eref("config/chatPassword").once("value").then(snap => {
-  REQUIRED_PWD = snap.val() || "";
-  
-  const saved = sessionStorage.getItem(`chatPwd:${EMPRESA}:${BOT}`);
-
-  if (!REQUIRED_PWD) {
-    document.getElementById("pwdScreen").remove();
-    return;
-  }
-
-  if (saved === REQUIRED_PWD) {
-    document.getElementById("pwdScreen").remove();
-    return;
-  }
-});
-
-document.getElementById("pwdBtn").addEventListener("click", () => {
-  const value = document.getElementById("pwdInput").value.trim();
-  
-  if (value === REQUIRED_PWD) {
-    sessionStorage.setItem(`chatPwd:${EMPRESA}:${BOT}`, value);
-    document.getElementById("pwdScreen").remove();
-  } else {
-    document.getElementById("pwdError").classList.remove("hidden");
-  }
-});
 
 function applyLeadCaptureConfig(value) {
   const normalized = value === false ? false : true;
