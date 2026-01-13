@@ -16,6 +16,31 @@
     "Playfair Display",
     "Merriweather"
   ];
+  const SUPPORTED_LANGUAGES = ["es", "en", "fr", "de", "pt"];
+
+  const normalizeLanguage = (value) => {
+    const normalized = (value || "").toString().trim().toLowerCase();
+    return SUPPORTED_LANGUAGES.includes(normalized) ? normalized : "";
+  };
+
+  const resolveLocalizedText = (labels = {}, preferred, fallback) => {
+    if (!labels || typeof labels !== "object") return "";
+    const preferredKey = normalizeLanguage(preferred);
+    const fallbackKey = normalizeLanguage(fallback || preferred);
+    const direct = labels[preferredKey];
+    if (typeof direct === "string" && direct.trim()) return direct.trim();
+    const fallbackValue = labels[fallbackKey];
+    if (typeof fallbackValue === "string" && fallbackValue.trim()) return fallbackValue.trim();
+    const anyValue = Object.values(labels).find(
+      (value) => typeof value === "string" && value.trim()
+    );
+    return anyValue ? anyValue.trim() : "";
+  };
+
+  const getBrowserLanguage = () => {
+    const raw = (navigator.language || "en").split("-")[0].toLowerCase();
+    return normalizeLanguage(raw);
+  };
 
   const normalizeOrigin = (value) => {
     if (!value) return "";
@@ -56,6 +81,30 @@
     }
 
     return null;
+  }
+
+  async function fetchBaseLanguage(empresa, botId) {
+    const safeEmpresa = encodeURIComponent(empresa || "");
+    const safeBot = encodeURIComponent(botId || "default");
+    const candidatePaths = [
+      `empresas/${safeEmpresa}/config/bots/${safeBot}/config/baseLanguage`,
+      `empresas/${safeEmpresa}/bots/${safeBot}/config/baseLanguage`,
+      `${safeEmpresa}/bots/${safeBot}/config/baseLanguage`
+    ];
+
+    for (const path of candidatePaths) {
+      const url = `${FIREBASE_DB_URL}/${path}.json`;
+      try {
+        const res = await fetch(url);
+        if (!res.ok) continue;
+        const data = await res.json();
+        if (typeof data === "string" && data.trim()) return data.trim();
+      } catch (err) {
+        console.warn("No se pudo cargar el idioma base del bot", err);
+      }
+    }
+
+    return "";
   }
 
   async function fetchFontFamily(empresa, botId) {
@@ -652,13 +701,25 @@
 
     restoreIconFromSession();
 
-    const font = await fetchFontFamily(empresa, botId);
+    const [font, welcomeConfig, baseLanguage] = await Promise.all([
+      fetchFontFamily(empresa, botId),
+      fetchWelcomeConfig(empresa, botId),
+      fetchBaseLanguage(empresa, botId)
+    ]);
     applyFontFamily(font);
 
-    const welcomeConfig = await fetchWelcomeConfig(empresa, botId);
-    if (welcomeConfig?.enabled && welcomeConfig?.text) {
-      welcomeText = (welcomeConfig.text || "").toString().trim();
-      maybeShowBubble();
+    if (welcomeConfig?.enabled) {
+      const browserLanguage = getBrowserLanguage();
+      const sourceLanguage = normalizeLanguage(welcomeConfig?.sourceLanguage || baseLanguage);
+      const resolved = resolveLocalizedText(
+        welcomeConfig?.labels,
+        browserLanguage,
+        sourceLanguage || baseLanguage
+      );
+      welcomeText = resolved || (welcomeConfig.text || "").toString().trim();
+      if (welcomeText) {
+        maybeShowBubble();
+      }
     }
 
     bubbleClose.addEventListener("click", (e) => {
