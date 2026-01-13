@@ -221,17 +221,6 @@ registerTranslationTarget(widgetIconColorLabel, 'Widget Icon Color');
 }
 }
 if (window.translationManager) {
-const chatPasswordTitle = document.getElementById('chatPasswordTitle');
-const chatPasswordToggleLabel = document.getElementById('chatPasswordToggleLabel');
-const chatPasswordSaveButton = document.getElementById('saveChatPasswordBtn');
-const toggleChatPasswordSrText = document.getElementById('toggleChatPasswordSrText');
-
-registerTranslationTarget(chatPasswordTitle, 'Chat Password');
-registerTranslationTarget(chatPasswordToggleLabel, 'Enable password protection');
-registerTranslationTarget(chatPasswordSaveButton, 'Save');
-registerTranslationTarget(toggleChatPasswordSrText, 'Toggle password visibility');
-}
-if (window.translationManager) {
 const personalityLabel = document.querySelector('label[for="personalitySelect"]');
 const personalitySelectEl = document.getElementById('personalitySelect');
 const personalityDropdownLabel = document.getElementById('personalityDropdownLabel');
@@ -5420,81 +5409,6 @@ if (!wrapper.contains(e.target)) list.classList.add("hidden");
 });
 }
 
-const chatPasswordInput = document.getElementById('chatPasswordInput');
-const saveChatPasswordBtn = document.getElementById('saveChatPasswordBtn');
-const chatPasswordToggle = document.getElementById('tgChatPasswordEnabled');
-const chatPasswordFields = document.getElementById('chatPasswordFields');
-const toggleChatPasswordVisibilityBtn = document.getElementById('toggleChatPasswordVisibility');
-
-if (chatPasswordInput && saveChatPasswordBtn) {
-const updateChatPasswordFields = (enabled) => {
-if (!chatPasswordFields) return;
-chatPasswordFields.classList.toggle('hidden', !enabled);
-
-if (!enabled) {
-chatPasswordInput.value = '';
-}
-};
-
-const updateChatPasswordVisibility = (visible) => {
-chatPasswordInput.type = visible ? 'text' : 'password';
-
-const icon = toggleChatPasswordVisibilityBtn?.querySelector('i[data-lucide]');
-if (icon) {
-icon.setAttribute('data-lucide', visible ? 'eye-off' : 'eye');
-if (window.lucide) {
-window.lucide.createIcons();
-}
-}
-
-if (toggleChatPasswordVisibilityBtn) {
-toggleChatPasswordVisibilityBtn.setAttribute('aria-pressed', visible ? 'true' : 'false');
-}
-};
-
-if (toggleChatPasswordVisibilityBtn) {
-let isPasswordVisible = false;
-updateChatPasswordVisibility(isPasswordVisible);
-
-toggleChatPasswordVisibilityBtn.addEventListener('click', () => {
-isPasswordVisible = !isPasswordVisible;
-updateChatPasswordVisibility(isPasswordVisible);
-});
-}
-
-if (chatPasswordToggle) {
-chatPasswordToggle.addEventListener('change', async () => {
-const enabled = chatPasswordToggle.checked;
-updateChatPasswordFields(enabled);
-
-if (!enabled) {
-await eref('config/chatPassword').set('');
-showToast(translationManager.translate('saved'));
-} else {
-chatPasswordInput.focus();
-}
-});
-}
-
-saveChatPasswordBtn.addEventListener('click', async () => {
-const pwd = chatPasswordInput.value.trim();
-await eref('config/chatPassword').set(pwd);
-showToast(translationManager.translate('saved'));
-});
-
-eref('config/chatPassword').on('value', snap => {
-const val = snap.val() || '';
-chatPasswordInput.value = val;
-
-const enabled = Boolean(val);
-
-if (chatPasswordToggle) {
-chatPasswordToggle.checked = enabled;
-}
-
-updateChatPasswordFields(enabled);
-});
-}
 // === Avatar ===
 const DEFAULT_AVATAR = 'avatars/1.png';
 const avatarButtons = Array.from(document.querySelectorAll('[data-avatar-option]'));
