@@ -233,6 +233,10 @@
               <i data-lucide="download" class="w-4 h-4"></i>
               <span>Download conversation</span>
             </button>
+            <button id="resetChatBtn" type="button" class="w-full px-3 py-2 text-left text-gray-500 hover:bg-gray-100 flex items-center gap-2">
+              <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
+              <span>Reset chat</span>
+            </button>
           </div>
         </div>
         <button id="closeChat" class="text-gray-400 hover:text-gray-600" title="Cerrar">
@@ -270,23 +274,33 @@
     const CHAT_TEXT_TRANSLATIONS = {
       es: {
         inputPlaceholder: 'Escribe tu mensaje…',
-        downloadConversation: 'Descargar conversación'
+        downloadConversation: 'Descargar conversación',
+        resetChat: 'Reiniciar chat',
+        resetChatConfirm: '¿Quieres reiniciar la conversación? Se eliminarán los mensajes actuales.'
       },
       en: {
         inputPlaceholder: 'Write your message…',
-        downloadConversation: 'Download conversation'
+        downloadConversation: 'Download conversation',
+        resetChat: 'Reset chat',
+        resetChatConfirm: 'Do you want to reset the conversation? Current messages will be removed.'
       },
       fr: {
         inputPlaceholder: 'Écrivez votre message…',
-        downloadConversation: 'Télécharger la conversation'
+        downloadConversation: 'Télécharger la conversation',
+        resetChat: 'Réinitialiser le chat',
+        resetChatConfirm: 'Voulez-vous réinitialiser la conversation ? Les messages actuels seront supprimés.'
       },
       de: {
         inputPlaceholder: 'Schreibe deine Nachricht…',
-        downloadConversation: 'Unterhaltung herunterladen'
+        downloadConversation: 'Unterhaltung herunterladen',
+        resetChat: 'Chat zurücksetzen',
+        resetChatConfirm: 'Möchtest du die Unterhaltung zurücksetzen? Die aktuellen Nachrichten werden gelöscht.'
       },
       pt: {
         inputPlaceholder: 'Escreva sua mensagem…',
-        downloadConversation: 'Baixar conversa'
+        downloadConversation: 'Baixar conversa',
+        resetChat: 'Reiniciar chat',
+        resetChatConfirm: 'Deseja reiniciar a conversa? As mensagens atuais serão removidas.'
       }
     };
     const CHAT_LANGUAGE_NAMES = {
@@ -357,6 +371,15 @@
       if (downloadChatBtnLabel) {
         downloadChatBtnLabel.textContent = selected.downloadConversation;
       }
+      const resetChatBtnLabel = document.querySelector('#resetChatBtn span');
+      if (resetChatBtnLabel) {
+        resetChatBtnLabel.textContent = selected.resetChat;
+      }
+    };
+
+    const getChatText = (key) => {
+      const selected = CHAT_TEXT_TRANSLATIONS[USER_LANGUAGE] || CHAT_TEXT_TRANSLATIONS.en;
+      return selected?.[key] || CHAT_TEXT_TRANSLATIONS.en?.[key] || '';
     };
 
     const updateLanguageSelector = (language) => {
@@ -455,11 +478,13 @@ const CHAT_SESSION_KEY = `chatId:${EMPRESA}:${BOT}`;
 let CHAT_ID = sessionStorage.getItem(CHAT_SESSION_KEY) || `${Date.now()}`;
 sessionStorage.setItem(CHAT_SESSION_KEY, CHAT_ID);
 
-const chatLogBaseRef = dbRef(`empresas/${EMPRESA}/bots/${BOT}/conversaciones/${CHAT_ID}`);
-const chatMessagesRef = chatLogBaseRef.child('messages');
-const chatMetaRef = chatLogBaseRef.child('meta');
+let chatLogBaseRef = dbRef(`empresas/${EMPRESA}/bots/${BOT}/conversaciones/${CHAT_ID}`);
+let chatMessagesRef = chatLogBaseRef.child('messages');
+let chatMetaRef = chatLogBaseRef.child('meta');
 let chatMetaCache = null;
 let chatStartedAt = null;
+let chatHistoryLoaded = false;
+let chatHasMessages = false;
 const conversationLog = []; // {sender:'bot'|'user', text:string, time:number}
 const pendingMessagesQueue = [];
 let hasUserSentMessage = false;
@@ -569,15 +594,20 @@ let userMessageCount = 0;
 let SYSTEM_PROMPT = "";
 let systemPromptRef = null;
 
-chatMetaRef.once('value').then(snapshot => {
-  chatMetaCache = snapshot.val() || {};
-  if (chatMetaCache.startedAt) {
-    chatStartedAt = chatMetaCache.startedAt;
-  }
-  if (chatMetaCache.origin) {
-    externalOriginSaved = true;
-  }
-}).catch(err => console.warn('No se pudo cargar la metadata del chat', err));
+function loadChatMetaCache() {
+  if (!chatMetaRef) return;
+  chatMetaRef.once('value').then(snapshot => {
+    chatMetaCache = snapshot.val() || {};
+    if (chatMetaCache.startedAt) {
+      chatStartedAt = chatMetaCache.startedAt;
+    }
+    if (chatMetaCache.origin) {
+      externalOriginSaved = true;
+    }
+  }).catch(err => console.warn('No se pudo cargar la metadata del chat', err));
+}
+
+loadChatMetaCache();
 
 function getChatUserName() {
   const candidates = [
@@ -818,6 +848,7 @@ const chatAvatarHead = document.getElementById('chatAvatarHead');
 const chatMenuBtn = document.getElementById('chatMenuBtn');
 const chatMenu = document.getElementById('chatMenu');
 const downloadChatBtn = document.getElementById('downloadChatBtn');
+const resetChatBtn = document.getElementById('resetChatBtn');
 const initialMenuContainer = document.getElementById('initialMenu');
 
 function linkify(text){
@@ -862,10 +893,8 @@ function createAssistantBubble(avatarUrl) {
   return { wrap, msg };
 }
 
-function addAssistantMessageHTML(html, {avatarUrl, rawText}={}){
-  const { msg } = createAssistantBubble(avatarUrl);
-  msg.innerHTML = html;
-  // 🔥 Force correct sizing of embedded iframes (YouTube, Vimeo, etc.)
+function applyAssistantMessageEnhancements(msg) {
+  if (!msg) return;
   msg.querySelectorAll("iframe").forEach((ifr) => {
     ifr.style.width = "100%";
     ifr.style.height = "215px";
@@ -874,7 +903,6 @@ function addAssistantMessageHTML(html, {avatarUrl, rawText}={}){
     ifr.removeAttribute("height");
   });
 
-  // Evita que el scroll sobre tarjetas automáticas mueva el resto del chat
   msg.querySelectorAll('.cards').forEach(cardsEl => {
     if (cardsEl.dataset.lockedScroll) return;
     const onWheel = (event) => {
@@ -887,9 +915,31 @@ function addAssistantMessageHTML(html, {avatarUrl, rawText}={}){
     cardsEl.addEventListener('wheel', onWheel, { passive: false });
     cardsEl.dataset.lockedScroll = '1';
   });
+}
+
+function addAssistantMessageHTML(html, {avatarUrl, rawText}={}){
+  const { msg } = createAssistantBubble(avatarUrl);
+  msg.innerHTML = html;
+  applyAssistantMessageEnhancements(msg);
 
   const plain = rawText != null ? rawText : stripHtml(html);
   logChatMessage('bot', plain);
+}
+
+function appendUserMessageToChat(text) {
+  const bubble = document.createElement('div');
+  bubble.className = 'chat-bubble chat-user';
+  bubble.textContent = text || '';
+  chatBox.appendChild(bubble);
+  chatBox.scrollTop = chatBox.scrollHeight;
+}
+
+function appendAssistantMessageToChat(text, { avatarUrl } = {}) {
+  const { msg } = createAssistantBubble(avatarUrl);
+  const content = text || '';
+  msg.innerHTML = content ? marked.parse(content) : '';
+  applyAssistantMessageEnhancements(msg);
+  chatBox.scrollTop = chatBox.scrollHeight;
 }
 
 function addAssistantMessage(text, opts={}){
@@ -978,6 +1028,74 @@ function delayedAssistantAction(action, delayMs = 1800, opts = {}) {
 
 function renderAssistantMessage(text) {
   addAssistantMessage(text, { avatarUrl: CURRENT.avatarUrl });
+}
+
+function resetConversationState() {
+  conversationLog.length = 0;
+  pendingMessagesQueue.length = 0;
+  MESSAGES.length = 0;
+  hasUserSentMessage = false;
+  userMessageCount = 0;
+  chatHasMessages = false;
+  chatHistoryLoaded = false;
+}
+
+function trackHistoryEntry({ sender, text, time }) {
+  const safeText = text == null ? '' : String(text);
+  conversationLog.push({ sender, text: safeText, time });
+  if (sender === 'user') {
+    userMessageCount += 1;
+    hasUserSentMessage = true;
+    MESSAGES.push({ role: 'user', content: safeText });
+    return;
+  }
+  MESSAGES.push({ role: 'assistant', content: safeText });
+}
+
+function renderHistoryMessage({ sender, text }) {
+  if (sender === 'user') {
+    appendUserMessageToChat(text);
+  } else {
+    appendAssistantMessageToChat(text, { avatarUrl: CURRENT.avatarUrl });
+  }
+}
+
+async function loadChatHistory({ reset = true } = {}) {
+  if (reset) {
+    chatBox.innerHTML = '';
+    resetConversationState();
+  }
+
+  if (!chatMessagesRef) {
+    chatHistoryLoaded = true;
+    return { hasMessages: false };
+  }
+
+  try {
+    const snap = await chatMessagesRef.once('value');
+    const raw = snap.val() || {};
+    const list = Array.isArray(raw) ? raw : Object.values(raw || {});
+    const ordered = list
+      .filter(item => item && (item.sender || item.text))
+      .sort((a, b) => (a.time || 0) - (b.time || 0));
+
+    if (ordered.length) {
+      chatHasMessages = true;
+      ordered.forEach((entry) => {
+        renderHistoryMessage(entry);
+        trackHistoryEntry(entry);
+      });
+    }
+  } catch (err) {
+    console.warn('No se pudo cargar el historial del chat', err);
+  }
+
+  chatHistoryLoaded = true;
+  return { hasMessages: chatHasMessages };
+}
+
+function isConversationEmpty() {
+  return conversationLog.length === 0;
 }
 
 function translate(lang, dict) {
@@ -1529,8 +1647,7 @@ document.addEventListener('click', (e) => {
    WELCOME (desde config/chatWelcome)
 ========================= */
 function scheduleWelcome(){
-  const key = `welcomeOnce_${EMPRESA}_${BOT}`;
-  if (sessionStorage.getItem(key)) return;
+  if (!isConversationEmpty()) return;
   const ref = eref('config/chatWelcome');
   const welcomeTypingDelayMs = 1200;
   ref.once('value').then(s=>{
@@ -1546,7 +1663,6 @@ function scheduleWelcome(){
     const html = parts.join("");
     if (!html) {
       requestInitialMenu();
-      sessionStorage.setItem(key, '1');
       return;
     }
     const typing = showTypingIndicator({ avatarUrl: CURRENT.avatarUrl });
@@ -1554,7 +1670,6 @@ function scheduleWelcome(){
       removeTyping(typing);
       addAssistantMessageHTML(html, { avatarUrl: CURRENT.avatarUrl });
       requestInitialMenu();
-      sessionStorage.setItem(key, '1');
     }, welcomeTypingDelayMs);
   });
 }
@@ -1710,6 +1825,50 @@ function downloadConversation() {
   URL.revokeObjectURL(url);
 }
 
+async function resetChatConversation() {
+  const confirmText = getChatText('resetChatConfirm')
+    || '¿Quieres reiniciar la conversación? Se eliminarán los mensajes actuales.';
+  if (!window.confirm(confirmText)) return;
+
+  setChatMenuVisibility(false);
+  hideLeadCapturePopup();
+  leadPromptShown = false;
+  leadCaptureState = null;
+  leadCaptureCompleted = false;
+
+  if (externalOriginFallbackTimeout) {
+    clearTimeout(externalOriginFallbackTimeout);
+    externalOriginFallbackTimeout = null;
+  }
+  externalOriginRequested = false;
+  externalOriginSaved = false;
+  chatMetaCache = null;
+  chatStartedAt = null;
+
+  try {
+    await chatLogBaseRef.remove();
+  } catch (err) {
+    console.warn('No se pudo borrar el historial del chat', err);
+  }
+
+  CHAT_ID = `${Date.now()}`;
+  sessionStorage.setItem(CHAT_SESSION_KEY, CHAT_ID);
+  chatLogBaseRef = dbRef(`empresas/${EMPRESA}/bots/${BOT}/conversaciones/${CHAT_ID}`);
+  chatMessagesRef = chatLogBaseRef.child('messages');
+  chatMetaRef = chatLogBaseRef.child('meta');
+  loadChatMetaCache();
+
+  try {
+    sessionStorage.removeItem(getFirstMenuKey());
+  } catch (err) {
+    console.warn('No se pudo reiniciar el menú inicial', err);
+  }
+
+  chatBox.innerHTML = '';
+  resetConversationState();
+  scheduleWelcome();
+}
+
 if (chatMenuBtn) {
   chatMenuBtn.addEventListener('click', (event) => {
     event.stopPropagation();
@@ -1724,6 +1883,12 @@ if (downloadChatBtn) {
     } finally {
       setChatMenuVisibility(false);
     }
+  });
+}
+
+if (resetChatBtn) {
+  resetChatBtn.addEventListener('click', () => {
+    resetChatConversation();
   });
 }
 
@@ -1914,7 +2079,11 @@ eref('config/avatarUrl').on('value', s => {
   });
 
   // Welcome
-  scheduleWelcome();
+  loadChatHistory({ reset: true }).then(({ hasMessages }) => {
+    if (!hasMessages) {
+      scheduleWelcome();
+    }
+  });
 }
 
 
