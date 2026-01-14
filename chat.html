@@ -53,13 +53,6 @@
     #chatBox { flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; padding:12px 16px 16px; }
     /* Footer input fijo */
     #chatFooter { position: sticky; bottom:0; z-index:10;padding:12px 16px calc(12px + env(safe-area-inset-bottom)); }
-    /* Initial menu fijo sobre el input */
-    #initialMenu {
-      display: flex;
-      flex-wrap: wrap;
-      justify-content: center;
-      gap: 8px;
-    }
     /* Burbujas */
     .chat-bubble { max-width: 86%; font-size:15px; line-height:1.45; }
     .chat-assistant { display:flex; align-items:flex-start; gap:10px; background:transparent; }
@@ -121,7 +114,6 @@
       color:var(--chat-primary); border-radius:9999px; padding:6px 10px; font-size:12px;
     }
     .pill-btn:hover { background:var(--chat-primary); color:#fff; }
-    #initialMenu .pill-btn { margin-top: 0; }
     .chat-bubble .pill-btn {
       color:inherit;
       border-color:currentColor;
@@ -250,7 +242,6 @@
 
     <!-- Footer -->
     <div id="chatFooter" class="flex flex-col gap-3">
-      <div id="initialMenu" class="hidden" aria-label="Initial menu"></div>
       <div class="flex items-center gap-3">
         <input id="chatInput" type="text" placeholder="Écrivez votre message…" />
         <button id="sendChatBtn"><i data-lucide="arrow-up" class="w-5 h-5"></i></button>
@@ -395,9 +386,6 @@
       document.documentElement.lang = normalized;
       updateChatStaticTexts(normalized);
       updateLanguageSelector(normalized);
-      if (typeof renderInitialMenu === 'function') {
-        renderInitialMenu();
-      }
       if (window.translationManager && typeof translationManager.applyLanguage === 'function') {
         translationManager.applyLanguage(normalized);
       }
@@ -849,7 +837,6 @@ const chatMenuBtn = document.getElementById('chatMenuBtn');
 const chatMenu = document.getElementById('chatMenu');
 const downloadChatBtn = document.getElementById('downloadChatBtn');
 const resetChatBtn = document.getElementById('resetChatBtn');
-const initialMenuContainer = document.getElementById('initialMenu');
 
 function linkify(text){
   if (!text) return "";
@@ -1443,7 +1430,15 @@ Cada campo debe contener una frase corta (máximo 30 palabras) que resuma por qu
    AUTO RESPONSES (desde Admin beta3)
 ========================= */
 let AUTO = {}; // { id: {trigger, type, text, cards, extras} }
-let FIRST_MENU = { enabled: false, buttons: [], sourceLanguage: 'es' };
+let FIRST_MENU = {
+  enabled: false,
+  buttons: [],
+  sourceLanguage: 'es',
+  title: '',
+  titleLabels: {}
+};
+let firstMenuLoaded = false;
+let initialMenuPending = false;
 function toYouTubeEmbed(url = '') {
   const match = (url || '').match(/(?:youtu\.be\/|v=)([\w-]{11})/);
   if (match && match[1]) return `https://www.youtube.com/embed/${match[1]}`;
@@ -1452,6 +1447,12 @@ function toYouTubeEmbed(url = '') {
 function normalizeFirstMenu(payload = {}) {
   const rawButtons = Array.isArray(payload?.buttons) ? payload.buttons : [];
   const sourceLanguage = normalizeChatLanguage(payload?.sourceLanguage) || BOT_BASE_LANGUAGE;
+  const rawTitleLabels = payload?.titleLabels;
+  const titleLabels = rawTitleLabels && typeof rawTitleLabels === 'object'
+    ? rawTitleLabels
+    : (payload?.title && typeof payload.title === 'object' ? payload.title : {});
+  const rawTitle = typeof payload?.title === 'string' ? payload.title : '';
+  const title = (resolveLocalizedText(titleLabels, sourceLanguage, sourceLanguage) || rawTitle || '').trim();
   const buttons = rawButtons
     .map(btn => {
       const labels = btn?.labels && typeof btn.labels === 'object' ? btn.labels : {};
@@ -1469,7 +1470,9 @@ function normalizeFirstMenu(payload = {}) {
   return {
     enabled: !!payload?.enabled,
     buttons,
-    sourceLanguage
+    sourceLanguage,
+    title,
+    titleLabels
   };
 }
 function getFirstMenuKey() {
@@ -1484,41 +1487,73 @@ function getFirstMenuButtonIntent(button) {
   if (!button) return '';
   return button.intent || button.message || '';
 }
-function renderInitialMenu() {
-  if (!initialMenuContainer) return false;
-  if (!FIRST_MENU.enabled || !FIRST_MENU.buttons || !FIRST_MENU.buttons.length) {
-    initialMenuContainer.innerHTML = "";
-    initialMenuContainer.classList.add('hidden');
+function hasFirstMenuBeenShown() {
+  try {
+    return sessionStorage.getItem(getFirstMenuKey()) === '1';
+  } catch (err) {
     return false;
   }
-  initialMenuContainer.innerHTML = buildFirstMenuHtml();
-  initialMenuContainer.classList.remove('hidden');
-  return true;
+}
+function markFirstMenuShown() {
+  try {
+    sessionStorage.setItem(getFirstMenuKey(), '1');
+  } catch (err) {
+    console.warn('No se pudo guardar el estado del menú inicial', err);
+  }
+}
+function getFirstMenuTitle() {
+  const fallbackLanguage = FIRST_MENU.sourceLanguage || BOT_BASE_LANGUAGE;
+  const resolved = resolveLocalizedText(FIRST_MENU.titleLabels, USER_LANGUAGE, fallbackLanguage);
+  return (resolved || FIRST_MENU.title || '').trim();
 }
 function buildFirstMenuHtml() {
   const buttons = FIRST_MENU.buttons || [];
   const btns = buttons.map(btn => {
     const label = escapeHtml(getFirstMenuButtonLabel(btn));
     const payload = encodeURIComponent(getFirstMenuButtonIntent(btn));
-    return `<button class="pill-btn first-menu-option" data-message="${payload}">${label}</button>`;
+    return `<button class="pill-btn first-menu-option mt-0" data-message="${payload}">${label}</button>`;
   }).join("");
   return btns;
 }
-function showFirstMenu({ force = false } = {}) {
-  if (renderInitialMenu()) return;
-  if (!FIRST_MENU.enabled) return;
-  if (!FIRST_MENU.buttons || !FIRST_MENU.buttons.length) return;
-  const key = getFirstMenuKey();
-  if (!force && sessionStorage.getItem(key)) return;
-  const html = `<div class="flex flex-wrap justify-center gap-2">${buildFirstMenuHtml()}</div>`;
+function buildFirstMenuBubbleHtml() {
+  const title = getFirstMenuTitle();
+  const titleHtml = title ? `<div class="font-semibold text-sm">${escapeHtml(title)}</div>` : '';
+  const buttonsHtml = buildFirstMenuHtml();
+  return `<div class="flex flex-col gap-2">${titleHtml}<div class="flex flex-wrap gap-2">${buttonsHtml}</div></div>`;
+}
+function canShowFirstMenu() {
+  if (!firstMenuLoaded) return false;
+  if (!FIRST_MENU.enabled) return false;
+  if (!FIRST_MENU.buttons || !FIRST_MENU.buttons.length) return false;
+  if (hasUserSentMessage) return false;
+  if (hasFirstMenuBeenShown()) return false;
+  return true;
+}
+function showFirstMenu() {
+  if (!canShowFirstMenu()) return false;
+  const html = buildFirstMenuBubbleHtml();
   addAssistantMessageHTML(html, {
     avatarUrl: CURRENT.avatarUrl,
-    rawText: FIRST_MENU.buttons.map(btn => getFirstMenuButtonLabel(btn)).join(", ")
+    rawText: [getFirstMenuTitle(), ...FIRST_MENU.buttons.map(btn => getFirstMenuButtonLabel(btn))]
+      .filter(Boolean)
+      .join(", ")
   });
-  if (!force) sessionStorage.setItem(key, '1');
+  markFirstMenuShown();
+  initialMenuPending = false;
+  return true;
 }
 function requestInitialMenu() {
-  showFirstMenu();
+  if (!firstMenuLoaded) {
+    initialMenuPending = true;
+    return false;
+  }
+  if (!canShowFirstMenu()) return false;
+  initialMenuPending = false;
+  const delayMs = 800;
+  delayedAssistantAction(() => {
+    showFirstMenu();
+  }, delayMs, { avatarUrl: CURRENT.avatarUrl });
+  return true;
 }
 function tryAutoResponse(userText){
   if (!userText || !AUTO) return false;
@@ -1712,6 +1747,7 @@ async function askAI(userText) {
 async function handleUserMessage(text){
   const safeText = typeof text === 'string' ? text : '';
   userMessageCount += 1;
+  initialMenuPending = false;
 
   const shouldShowLeadPopup =
     leadCaptureEnabled &&
@@ -2075,7 +2111,10 @@ eref('config/avatarUrl').on('value', s => {
   // First menu
   eref('config/firstMenu').on('value', s => {
     FIRST_MENU = normalizeFirstMenu(s.val());
-    renderInitialMenu();
+    firstMenuLoaded = true;
+    if (initialMenuPending) {
+      requestInitialMenu();
+    }
   });
 
   // Welcome

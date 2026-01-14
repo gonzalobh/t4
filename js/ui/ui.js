@@ -8673,6 +8673,8 @@ const enabledToggle = $("firstMenuEnabled");
 const enabledLabel = $("firstMenuEnabledLabel");
 const titleEl = $("firstMenuTitle");
 const descriptionEl = $("firstMenuDescription");
+const titleFieldLabel = $("firstMenuTitleFieldLabel");
+const titleInput = $("firstMenuTitleInput");
 const buttonsLabel = $("firstMenuButtonsLabel");
 const buttonsList = $("firstMenuButtonsList");
 const limitHint = $("firstMenuLimitHint");
@@ -8681,7 +8683,7 @@ const previewLabel = $("firstMenuPreviewLabel");
 const preview = $("firstMenuPreview");
 const saveButton = $("saveFirstMenu");
 const messageEl = $("msgFirstMenu");
-if (!enabledToggle || !buttonsList || !addButton || !saveButton || !preview) {
+if (!enabledToggle || !buttonsList || !addButton || !saveButton || !preview || !titleInput) {
 console.warn("⏳ Esperando elementos del Menú inicial...");
 setTimeout(initFirstMenu, 400);
 return;
@@ -8690,6 +8692,8 @@ const ref = eref("config/firstMenu");
 const MAX_BUTTONS = 5;
 const state = {
 enabled: false,
+title: "",
+titleLabels: {},
 buttons: [],
 sourceLanguage: getCurrentBotBaseLanguage()
 };
@@ -8725,6 +8729,14 @@ addButton.classList.toggle("cursor-not-allowed", disabled);
 };
 const renderPreview = () => {
 preview.innerHTML = "";
+const container = document.createElement("div");
+container.className = "flex flex-col gap-2";
+if (state.title) {
+const titlePreview = document.createElement("div");
+titlePreview.className = "text-sm font-semibold text-gray-700";
+titlePreview.textContent = state.title;
+container.appendChild(titlePreview);
+}
 const wrap = document.createElement("div");
 wrap.className = "flex flex-wrap gap-2";
 state.buttons.forEach(btn => {
@@ -8735,14 +8747,15 @@ pill.textContent = btn.label;
 wrap.appendChild(pill);
 });
 if (wrap.childElementCount) {
-preview.appendChild(wrap);
+container.appendChild(wrap);
 } else {
 const placeholder = document.createElement("p");
 placeholder.className = "text-xs text-gray-400";
 placeholder.textContent = t("Menu buttons will appear here.");
 registerTranslationTarget(placeholder, "Menu buttons will appear here.");
-preview.appendChild(placeholder);
+container.appendChild(placeholder);
 }
+preview.appendChild(container);
 };
 const renderButtons = () => {
 buttonsList.innerHTML = "";
@@ -8780,7 +8793,10 @@ updateAddButtonState();
 renderPreview();
 };
 const persist = async () => {
+const panelLanguage = getCurrentContentLanguage();
 const sourceLanguage = getCurrentBotBaseLanguage();
+const titleText = (titleInput.value || "").trim();
+const titleLabels = buildLabelsForLanguage(titleText, panelLanguage, state.titleLabels || {});
 const translatedButtons = await Promise.all(state.buttons.map(async (btn) => {
 const labelText = (btn.label || '').trim();
 const intent = (btn.message || btn.intent || '').trim();
@@ -8796,12 +8812,16 @@ const buttons = translatedButtons.filter(btn => btn.label && btn.intent);
 await canWrite(async () => {
 const payload = {
 enabled: !!state.enabled,
+title: titleLabels[sourceLanguage] || titleText,
+titleLabels,
 sourceLanguage,
 buttons
 };
 await ref.set(payload);
 state.buttons = buttons;
 state.sourceLanguage = sourceLanguage;
+state.title = titleText;
+state.titleLabels = payload.titleLabels || {};
 setMessage(t("✔ Changes saved"));
 toast(t("✔ Changes saved"));
 });
@@ -8817,6 +8837,14 @@ registerTranslationTarget(enabledLabel, "Active");
 if (descriptionEl) {
 descriptionEl.textContent = t("Show the first menu right after the welcome message.");
 registerTranslationTarget(descriptionEl, "Show the first menu right after the welcome message.");
+}
+if (titleFieldLabel) {
+titleFieldLabel.textContent = t("Menu title");
+registerTranslationTarget(titleFieldLabel, "Menu title");
+}
+if (titleInput) {
+titleInput.placeholder = t("Add a title...");
+registerTranslationTarget(titleInput, "Add a title...", "placeholder");
 }
 if (buttonsLabel) {
 buttonsLabel.textContent = t("Buttons");
@@ -8843,10 +8871,15 @@ registerTranslationTarget(saveLabel, "Save changes");
 ref.once("value").then(snap => {
 const val = snap.val() || {};
 const sourceLanguage = normalizeBotLanguage(val.sourceLanguage || getCurrentBotBaseLanguage());
+const titleLabels = val.titleLabels && typeof val.titleLabels === 'object' ? val.titleLabels : {};
+const panelLanguage = getCurrentContentLanguage();
 state.enabled = !!val.enabled;
 state.buttons = normalizeButtons(val.buttons, sourceLanguage);
 state.sourceLanguage = sourceLanguage;
+state.titleLabels = titleLabels;
+state.title = resolveLocalizedLabel(titleLabels, panelLanguage, sourceLanguage) || val.title || "";
 enabledToggle.checked = state.enabled;
+titleInput.value = state.title || "";
 renderButtons();
 });
 enabledToggle.addEventListener("change", () => {
@@ -8859,6 +8892,11 @@ if (!Number.isFinite(index)) return;
 const field = target.dataset.field;
 if (!state.buttons[index]) return;
 state.buttons[index][field] = target.value;
+renderPreview();
+});
+titleInput.addEventListener("input", () => {
+state.title = titleInput.value;
+state.titleLabels = buildLabelsForLanguage(state.title, getCurrentContentLanguage(), state.titleLabels);
 renderPreview();
 });
 addButton.addEventListener("click", () => {
