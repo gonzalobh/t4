@@ -650,7 +650,10 @@
       frame.style.display = "block";
       requestAnimationFrame(() => frame.classList.add("is-visible"));
       showCloseIcon();
-      const openFn = () => frame.contentWindow.postMessage({ action: "openChatWindow" }, "*");
+      const openFn = () => {
+        frame.contentWindow.postMessage({ action: "openChatWindow" }, "*");
+        frame.contentWindow.postMessage({ action: "chatOpened" }, "*");
+      };
       if (ready) {
         openFn();
       } else {
