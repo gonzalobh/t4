@@ -679,14 +679,16 @@ function flushPendingMessages() {
   }
 }
 
-function logChatMessage(sender, text) {
+function logChatMessage(sender, text, meta = {}) {
   if (!chatMessagesRef || !sender) return;
   const now = Date.now();
   const safeText = text == null ? '' : String(text);
+  const extra = meta && typeof meta === 'object' ? meta : {};
   const payload = {
     sender,
     text: safeText,
-    time: now
+    time: now,
+    ...extra
   };
   conversationLog.push({ sender, text: safeText, time: now });
   const isUserMessage = sender === 'user' && safeText.trim().length > 0;
@@ -926,13 +928,13 @@ function applyAssistantMessageEnhancements(msg) {
   });
 }
 
-function addAssistantMessageHTML(html, {avatarUrl, rawText}={}){
+function addAssistantMessageHTML(html, {avatarUrl, rawText, meta}={}){
   const { msg } = createAssistantBubble(avatarUrl);
   msg.innerHTML = html;
   applyAssistantMessageEnhancements(msg);
 
   const plain = rawText != null ? rawText : stripHtml(html);
-  logChatMessage('bot', plain);
+  logChatMessage('bot', plain, meta);
 }
 
 function appendUserMessageToChat(text) {
@@ -947,6 +949,13 @@ function appendAssistantMessageToChat(text, { avatarUrl } = {}) {
   const { msg } = createAssistantBubble(avatarUrl);
   const content = text || '';
   msg.innerHTML = content ? marked.parse(content) : '';
+  applyAssistantMessageEnhancements(msg);
+  chatBox.scrollTop = chatBox.scrollHeight;
+}
+
+function appendAssistantMessageHTMLToChat(html, { avatarUrl } = {}) {
+  const { msg } = createAssistantBubble(avatarUrl);
+  msg.innerHTML = html || '';
   applyAssistantMessageEnhancements(msg);
   chatBox.scrollTop = chatBox.scrollHeight;
 }
@@ -1061,10 +1070,34 @@ function trackHistoryEntry({ sender, text, time }) {
   MESSAGES.push({ role: 'assistant', content: safeText });
 }
 
-function renderHistoryMessage({ sender, text }) {
+function isInitialMenuHistoryEntry(entry = {}) {
+  return entry?.type === 'first_menu'
+    || (Array.isArray(entry?.buttons) && entry.buttons.length > 0);
+}
+
+function buildFirstMenuBubbleHtmlFromHistory(entry = {}) {
+  const title = typeof entry.title === 'string' ? entry.title.trim() : '';
+  const titleHtml = title ? `<div class="font-semibold text-sm">${escapeHtml(title)}</div>` : '';
+  const buttons = Array.isArray(entry.buttons) ? entry.buttons : [];
+  const buttonsHtml = buttons.map((btn) => {
+    if (!btn?.label) return '';
+    const label = escapeHtml(btn.label);
+    const payload = encodeURIComponent(btn.intent || btn.message || '');
+    return `<button class="pill-btn first-menu-option mt-0" data-message="${payload}">${label}</button>`;
+  }).join('');
+  return `<div class="flex flex-col gap-2">${titleHtml}<div class="flex flex-wrap gap-2">${buttonsHtml}</div></div>`;
+}
+
+function renderHistoryMessage(entry) {
+  const { sender, text } = entry || {};
   if (sender === 'user') {
     appendUserMessageToChat(text);
   } else {
+    if (isInitialMenuHistoryEntry(entry)) {
+      const html = buildFirstMenuBubbleHtmlFromHistory(entry);
+      appendAssistantMessageHTMLToChat(html, { avatarUrl: CURRENT.avatarUrl });
+      return;
+    }
     appendAssistantMessageToChat(text, { avatarUrl: CURRENT.avatarUrl });
   }
 }
@@ -1554,11 +1587,20 @@ function canShowFirstMenu() {
 function showFirstMenu() {
   if (!canShowFirstMenu()) return false;
   const html = buildFirstMenuBubbleHtml();
+  const historyPayload = {
+    type: 'first_menu',
+    title: getFirstMenuTitle(),
+    buttons: (FIRST_MENU.buttons || []).map((btn) => ({
+      label: getFirstMenuButtonLabel(btn),
+      intent: getFirstMenuButtonIntent(btn)
+    }))
+  };
   addAssistantMessageHTML(html, {
     avatarUrl: CURRENT.avatarUrl,
     rawText: [getFirstMenuTitle(), ...FIRST_MENU.buttons.map(btn => getFirstMenuButtonLabel(btn))]
       .filter(Boolean)
-      .join(", ")
+      .join(", "),
+    meta: historyPayload
   });
   markFirstMenuShown();
   initialMenuPending = false;
