@@ -462,6 +462,17 @@ function initChatLanguageControls() {
   applyChatLanguage(resolveChatLanguage());
 }
 
+async function loadBotBaseLanguage() {
+  const path = `empresas/${EMPRESA}/bots/${BOT}/config/baseLanguage`;
+  try {
+    const snap = await db.ref(path).once('value');
+    return normalizeChatLanguage(snap.val());
+  } catch (err) {
+    console.warn('No se pudo cargar el idioma base del bot', err);
+    return '';
+  }
+}
+
 const CHAT_SESSION_KEY = `chatId:${EMPRESA}:${BOT}`;
 let CHAT_ID = sessionStorage.getItem(CHAT_SESSION_KEY) || `${Date.now()}`;
 sessionStorage.setItem(CHAT_SESSION_KEY, CHAT_ID);
@@ -2323,6 +2334,10 @@ document.addEventListener("DOMContentLoaded", async () => {
   await prepareBotPath();
   initSystemPromptListener();
   initFirebaseBindings();
+  const baseLang = await loadBotBaseLanguage();
+  if (baseLang) {
+    BOT_BASE_LANGUAGE = baseLang;
+  }
   initChatLanguageControls();
 
   // Cerrar chat
