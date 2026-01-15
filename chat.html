@@ -1085,7 +1085,7 @@ function buildFirstMenuBubbleHtmlFromHistory(entry = {}) {
     const payload = encodeURIComponent(btn.intent || btn.message || '');
     return `<button class="pill-btn first-menu-option mt-0" data-message="${payload}">${label}</button>`;
   }).join('');
-  return `<div class="flex flex-col gap-2">${titleHtml}<div class="flex flex-wrap gap-2">${buttonsHtml}</div></div>`;
+  return `<div class="flex flex-col gap-2" data-first-menu="1">${titleHtml}<div class="flex flex-wrap gap-2">${buttonsHtml}</div></div>`;
 }
 
 function renderHistoryMessage(entry) {
@@ -1574,34 +1574,25 @@ function buildFirstMenuBubbleHtml() {
   const title = getFirstMenuTitle();
   const titleHtml = title ? `<div class="font-semibold text-sm">${escapeHtml(title)}</div>` : '';
   const buttonsHtml = buildFirstMenuHtml();
-  return `<div class="flex flex-col gap-2">${titleHtml}<div class="flex flex-wrap gap-2">${buttonsHtml}</div></div>`;
+  return `<div class="flex flex-col gap-2" data-first-menu="1">${titleHtml}<div class="flex flex-wrap gap-2">${buttonsHtml}</div></div>`;
+}
+function isFirstMenuRendered() {
+  return Boolean(chatBox?.querySelector('[data-first-menu="1"]'));
 }
 function canShowFirstMenu() {
+  if (!chatHistoryLoaded) return false;
   if (!firstMenuLoaded) return false;
   if (!FIRST_MENU.enabled) return false;
   if (!FIRST_MENU.buttons || !FIRST_MENU.buttons.length) return false;
   if (hasUserSentMessage) return false;
+  if (isFirstMenuRendered()) return false;
   if (hasFirstMenuBeenShown()) return false;
   return true;
 }
 function showFirstMenu() {
   if (!canShowFirstMenu()) return false;
   const html = buildFirstMenuBubbleHtml();
-  const historyPayload = {
-    type: 'first_menu',
-    title: getFirstMenuTitle(),
-    buttons: (FIRST_MENU.buttons || []).map((btn) => ({
-      label: getFirstMenuButtonLabel(btn),
-      intent: getFirstMenuButtonIntent(btn)
-    }))
-  };
-  addAssistantMessageHTML(html, {
-    avatarUrl: CURRENT.avatarUrl,
-    rawText: [getFirstMenuTitle(), ...FIRST_MENU.buttons.map(btn => getFirstMenuButtonLabel(btn))]
-      .filter(Boolean)
-      .join(", "),
-    meta: historyPayload
-  });
+  appendAssistantMessageHTMLToChat(html, { avatarUrl: CURRENT.avatarUrl });
   markFirstMenuShown();
   initialMenuPending = false;
   return true;
