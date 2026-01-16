@@ -1086,8 +1086,7 @@ function trackHistoryEntry({ sender, text, time }) {
 }
 
 function isInitialMenuHistoryEntry(entry = {}) {
-  return entry?.type === 'first_menu'
-    || (Array.isArray(entry?.buttons) && entry.buttons.length > 0);
+  return entry?.type === 'first_menu';
 }
 
 function buildFirstMenuBubbleHtmlFromHistory(entry = {}) {
@@ -1611,6 +1610,13 @@ function showFirstMenu() {
   if (!canShowFirstMenu()) return false;
   const html = buildFirstMenuBubbleHtml();
   appendAssistantMessageHTMLToChat(html, { avatarUrl: CURRENT.avatarUrl });
+  persistChatPayload({
+    sender: 'bot',
+    type: 'first_menu',
+    title: FIRST_MENU.title,
+    buttons: FIRST_MENU.buttons,
+    time: Date.now()
+  });
   markFirstMenuShown();
   initialMenuPending = false;
   return true;
