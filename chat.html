@@ -928,10 +928,22 @@ function applyAssistantMessageEnhancements(msg) {
   });
 }
 
+function reapplyInitialButtonsStyles(container) {
+  if (!container) return;
+  const buttons = container.querySelectorAll('[data-initial-button], [data-first-menu="1"] .first-menu-option');
+  buttons.forEach((button) => {
+    button.classList.add('pill-btn');
+    if (button.tagName === 'A') {
+      button.setAttribute('role', 'button');
+    }
+  });
+}
+
 function addAssistantMessageHTML(html, {avatarUrl, rawText, meta}={}){
   const { msg } = createAssistantBubble(avatarUrl);
   msg.innerHTML = html;
   applyAssistantMessageEnhancements(msg);
+  reapplyInitialButtonsStyles(msg);
 
   const plain = rawText != null ? rawText : stripHtml(html);
   logChatMessage('bot', plain, meta);
@@ -950,6 +962,7 @@ function appendAssistantMessageToChat(text, { avatarUrl } = {}) {
   const content = text || '';
   msg.innerHTML = content ? marked.parse(content) : '';
   applyAssistantMessageEnhancements(msg);
+  reapplyInitialButtonsStyles(msg);
   chatBox.scrollTop = chatBox.scrollHeight;
 }
 
@@ -957,6 +970,7 @@ function appendAssistantMessageHTMLToChat(html, { avatarUrl } = {}) {
   const { msg } = createAssistantBubble(avatarUrl);
   msg.innerHTML = html || '';
   applyAssistantMessageEnhancements(msg);
+  reapplyInitialButtonsStyles(msg);
   chatBox.scrollTop = chatBox.scrollHeight;
 }
 
@@ -989,6 +1003,7 @@ function addAssistantMessage(text, opts={}){
     if (index < total) {
       setTimeout(typeNextChunk, baseDelay);
     } else {
+      reapplyInitialButtonsStyles(msg);
       logChatMessage('bot', content);
     }
   }
@@ -1083,7 +1098,7 @@ function buildFirstMenuBubbleHtmlFromHistory(entry = {}) {
     if (!btn?.label) return '';
     const label = escapeHtml(btn.label);
     const payload = encodeURIComponent(btn.intent || btn.message || '');
-    return `<button class="pill-btn first-menu-option mt-0" data-message="${payload}">${label}</button>`;
+    return `<button class="pill-btn first-menu-option mt-0" data-message="${payload}" data-initial-button="1">${label}</button>`;
   }).join('');
   return `<div class="flex flex-col gap-2" data-first-menu="1">${titleHtml}<div class="flex flex-wrap gap-2">${buttonsHtml}</div></div>`;
 }
@@ -1096,9 +1111,11 @@ function renderHistoryMessage(entry) {
     if (isInitialMenuHistoryEntry(entry)) {
       const html = buildFirstMenuBubbleHtmlFromHistory(entry);
       appendAssistantMessageHTMLToChat(html, { avatarUrl: CURRENT.avatarUrl });
+      reapplyInitialButtonsStyles(chatBox);
       return;
     }
     appendAssistantMessageToChat(text, { avatarUrl: CURRENT.avatarUrl });
+    reapplyInitialButtonsStyles(chatBox);
   }
 }
 
@@ -1127,6 +1144,7 @@ async function loadChatHistory({ reset = true } = {}) {
         renderHistoryMessage(entry);
         trackHistoryEntry(entry);
       });
+      reapplyInitialButtonsStyles(chatBox);
     }
   } catch (err) {
     console.warn('No se pudo cargar el historial del chat', err);
@@ -1566,7 +1584,7 @@ function buildFirstMenuHtml() {
   const btns = buttons.map(btn => {
     const label = escapeHtml(getFirstMenuButtonLabel(btn));
     const payload = encodeURIComponent(getFirstMenuButtonIntent(btn));
-    return `<button class="pill-btn first-menu-option mt-0" data-message="${payload}">${label}</button>`;
+    return `<button class="pill-btn first-menu-option mt-0" data-message="${payload}" data-initial-button="1">${label}</button>`;
   }).join("");
   return btns;
 }
