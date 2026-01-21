@@ -34,6 +34,23 @@
     return "";
   };
 
+  const getTodayKey = () => new Date().toISOString().slice(0, 10);
+  const BUBBLE_DAY_KEY = "tomosBubbleLastShown";
+
+  const canShowBubbleToday = () => {
+    try {
+      return localStorage.getItem(BUBBLE_DAY_KEY) !== getTodayKey();
+    } catch {
+      return true;
+    }
+  };
+
+  const markBubbleShownToday = () => {
+    try {
+      localStorage.setItem(BUBBLE_DAY_KEY, getTodayKey());
+    } catch {}
+  };
+
   const getBrowserLanguage = () => {
     const raw = (navigator.language || "en").split("-")[0].toLowerCase();
     return normalizeLanguage(raw);
@@ -464,13 +481,10 @@
 
     // 🔄 Comunicación con el iframe
     let ready = false, got = false, currentPosition = 'right';
-    let bubbleDismissed = false;
     let bubbleText = "";
     let bubbleConfig = null;
     let bubbleBaseLanguage = "";
-    let bubbleShowOnce = true;
     let bubbleLanguage = getBrowserLanguage();
-    const bubbleDismissedKey = `chatBubbleDismissed_${empresa}_${botId}`;
     let pendingVisibility = null;
     let positionResolved = false;
     let positionResolveTimeout = null;
@@ -478,14 +492,8 @@
     let autoOpenEnabled = false;
     let autoOpenTriggered = false;
 
-    const hideBubble = (permanent = false) => {
+    const hideBubble = () => {
       bubble.style.display = "none";
-      if (permanent && bubbleShowOnce) {
-        bubbleDismissed = true;
-        try {
-          sessionStorage.setItem(bubbleDismissedKey, "1");
-        } catch {}
-      }
     };
 
     const deriveIconColor = (element) => {
@@ -625,7 +633,9 @@
     };
 
     const maybeShowBubble = () => {
-      if (!bubbleText || bubbleDismissed) return;
+      if (!bubbleText) return;
+      if (isChatOpen) return;
+      if (!canShowBubbleToday()) return;
       if (btn.style.display === "none") return;
       if (!positionResolved) {
         pendingBubble = true;
@@ -636,6 +646,7 @@
       bubbleMessage.textContent = bubbleText;
       bubble.style.display = "flex";
       bubble.dataset.position = currentPosition;
+      markBubbleShownToday();
     };
 
     const tryAutoOpenChat = () => {
@@ -646,7 +657,9 @@
     };
 
     const openChat = () => {
-      hideBubble(true);
+      isChatOpen = true;
+      markBubbleShownToday();
+      hideBubble();
       frame.style.display = "block";
       requestAnimationFrame(() => frame.classList.add("is-visible"));
       showCloseIcon();
@@ -752,12 +765,6 @@
     applyFontFamily(font);
     bubbleConfig = chatBubbleConfig;
     bubbleBaseLanguage = normalizeLanguage(baseLanguage) || "";
-    bubbleShowOnce = chatBubbleConfig?.showOnce !== false;
-    if (bubbleShowOnce) {
-      try {
-        bubbleDismissed = sessionStorage.getItem(bubbleDismissedKey) === "1";
-      } catch {}
-    }
     if (bubbleConfig?.enabled) {
       const browserLanguage = getBrowserLanguage();
       bubbleLanguage = browserLanguage || bubbleLanguage;
@@ -766,7 +773,8 @@
 
     bubbleClose.addEventListener("click", (e) => {
       e.stopPropagation();
-      hideBubble(true);
+      markBubbleShownToday();
+      hideBubble();
     });
 
     bubble.addEventListener("click", (e) => {
