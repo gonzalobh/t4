@@ -34,20 +34,22 @@
     return "";
   };
 
-  const getTodayKey = () => new Date().toISOString().slice(0, 10);
-  const BUBBLE_DAY_KEY = "tomosBubbleLastShown";
+  const BUBBLE_DISMISSED_KEY = "tomosBubbleDismissedAt";
+  const ONE_DAY_IN_MS = 24 * 60 * 60 * 1000;
 
-  const canShowBubbleToday = () => {
+  const canShowBubble = () => {
     try {
-      return localStorage.getItem(BUBBLE_DAY_KEY) !== getTodayKey();
+      const dismissedAt = localStorage.getItem(BUBBLE_DISMISSED_KEY);
+      if (!dismissedAt) return true;
+      return Date.now() - Number(dismissedAt) > ONE_DAY_IN_MS;
     } catch {
       return true;
     }
   };
 
-  const markBubbleShownToday = () => {
+  const saveBubbleDismissedAt = (timestamp) => {
     try {
-      localStorage.setItem(BUBBLE_DAY_KEY, getTodayKey());
+      localStorage.setItem(BUBBLE_DISMISSED_KEY, String(timestamp));
     } catch {}
   };
 
@@ -635,7 +637,7 @@
     const maybeShowBubble = () => {
       if (!bubbleText) return;
       if (isChatOpen) return;
-      if (!canShowBubbleToday()) return;
+      if (!canShowBubble()) return;
       if (btn.style.display === "none") return;
       if (!positionResolved) {
         pendingBubble = true;
@@ -646,7 +648,6 @@
       bubbleMessage.textContent = bubbleText;
       bubble.style.display = "flex";
       bubble.dataset.position = currentPosition;
-      markBubbleShownToday();
     };
 
     const tryAutoOpenChat = () => {
@@ -658,7 +659,6 @@
 
     const openChat = () => {
       isChatOpen = true;
-      markBubbleShownToday();
       hideBubble();
       frame.style.display = "block";
       requestAnimationFrame(() => frame.classList.add("is-visible"));
@@ -773,12 +773,13 @@
 
     bubbleClose.addEventListener("click", (e) => {
       e.stopPropagation();
-      markBubbleShownToday();
       hideBubble();
+      saveBubbleDismissedAt(Date.now());
     });
 
     bubble.addEventListener("click", (e) => {
       if (e.target.closest && e.target.closest('#chatWidgetBubbleClose')) return;
+      hideBubble();
       openChat();
     });
 
