@@ -37,11 +37,20 @@
   const BUBBLE_DISMISSED_KEY = "tomosBubbleDismissedAt";
   const ONE_DAY_IN_MS = 24 * 60 * 60 * 1000;
 
-  const canShowBubble = () => {
+  const shouldShowBubbleFromStorage = () => {
     try {
       const dismissedAt = localStorage.getItem(BUBBLE_DISMISSED_KEY);
       if (!dismissedAt) return true;
-      return Date.now() - Number(dismissedAt) > ONE_DAY_IN_MS;
+      const dismissedAtNumber = Number(dismissedAt);
+      if (!Number.isFinite(dismissedAtNumber)) {
+        localStorage.removeItem(BUBBLE_DISMISSED_KEY);
+        return true;
+      }
+      if (Date.now() - dismissedAtNumber > ONE_DAY_IN_MS) {
+        localStorage.removeItem(BUBBLE_DISMISSED_KEY);
+        return true;
+      }
+      return false;
     } catch {
       return true;
     }
@@ -493,9 +502,20 @@
     let pendingBubble = false;
     let autoOpenEnabled = false;
     let autoOpenTriggered = false;
+    let bubbleDismissed = !shouldShowBubbleFromStorage();
 
     const hideBubble = () => {
       bubble.style.display = "none";
+    };
+
+    const dismissBubble = () => {
+      bubbleDismissed = true;
+      hideBubble();
+      saveBubbleDismissedAt(Date.now());
+    };
+
+    const resetBubbleIfExpired = () => {
+      bubbleDismissed = !shouldShowBubbleFromStorage();
     };
 
     const deriveIconColor = (element) => {
@@ -637,7 +657,8 @@
     const maybeShowBubble = () => {
       if (!bubbleText) return;
       if (isChatOpen) return;
-      if (!canShowBubble()) return;
+      resetBubbleIfExpired();
+      if (bubbleDismissed) return;
       if (btn.style.display === "none") return;
       if (!positionResolved) {
         pendingBubble = true;
@@ -688,6 +709,7 @@
       frame.addEventListener("transitionend", hideFrame);
       setTimeout(hideFrame, 300);
       showOriginalIcon();
+      maybeShowBubble();
     };
 
     applyWidgetPosition(currentPosition);
@@ -773,13 +795,11 @@
 
     bubbleClose.addEventListener("click", (e) => {
       e.stopPropagation();
-      hideBubble();
-      saveBubbleDismissedAt(Date.now());
+      dismissBubble();
     });
 
     bubble.addEventListener("click", (e) => {
       if (e.target.closest && e.target.closest('#chatWidgetBubbleClose')) return;
-      hideBubble();
       openChat();
     });
 
@@ -859,14 +879,9 @@
       }
     });
 
-    // 🖱️ Clic en el botón → abrir o cerrar el chat
+    // 🖱️ Clic en el botón → abrir el chat
     btn.onclick = () => {
-      const open = frame.style.display === "block";
-      if (open) {
-        closeChat();
-      } else {
-        openChat();
-      }
+      openChat();
     };
 
     // ⏳ Solicitar estado e ícono periódicamente hasta que responda
